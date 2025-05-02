@@ -13,6 +13,7 @@ import TransactionDetails from './pages/TransactionDetails';
 import { VaultProvider } from './context/VaultContext';
 import { TeamProvider } from './context/TeamContext';
 import TransactionHistory from './pages/TransactionHistory';
+import CreateTransaction from './pages/CreateTransaction';
 
 function App() {
   return (
@@ -31,6 +32,7 @@ function App() {
               <Route path="team/create" element={<CreateTeam />} />
               <Route path="team/transaction/:id" element={<TransactionDetails />} />
               <Route path="/transactions" element={<TransactionHistory />} /> 
+              <Route path="/create-transaction" element={<CreateTransaction />} />
             </Route>
           </Routes>
         </Router>
