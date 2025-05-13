@@ -143,6 +143,29 @@ const CreateTeam = () => {
       return;
     }
     
+    // --- Send to backend for SES verification ---
+    const emailList = formData.members.map(m => m.email);
+    console.log('Collected emails for SES:', emailList);
+    try {
+      const resp = await fetch(
+        `${process.env.REACT_APP_BACKEND_URL}/verify-email`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ emails: emailList })
+        }
+      );
+      if (!resp.ok) {
+        const body = await resp.json();
+        throw new Error(body.message || 'Failed to verify emails');
+      }
+    } catch (verifyErr) {
+      console.error('SES verification error:', verifyErr);
+      setError(verifyErr.message);
+      return;
+    }
+    // --- END SES verification ---
+
     try {
       // Create team data object
       const teamData = {
