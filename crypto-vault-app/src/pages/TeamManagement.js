@@ -6,16 +6,16 @@ import TeamMembersList from '../components/team/TeamMembersList';
 import TransactionHistory from '../components/team/TransactionHistory';
 
 const TeamManagement = () => {
-  const { 
-    activeTeam, 
-    pendingTransactions, 
-    transactionHistory, 
+  const {
+    activeTeam,
+    pendingTransactions,
+    transactionHistory,
     selectTeam,
     teams,
     deleteTeam,
-    isLoading 
+    isLoading
   } = useVault();
-  
+
   const [activeTab, setActiveTab] = useState('members');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteError, setDeleteError] = useState('');
@@ -81,7 +81,7 @@ const TeamManagement = () => {
           <div className="bg-gray-800 rounded-lg overflow-hidden">
             <ul className="divide-y divide-gray-700">
               {teams.map(team => (
-                <li 
+                <li
                   key={team.id}
                   className={`px-4 py-3 cursor-pointer ${activeTeam && activeTeam.id === team.id ? 'bg-gray-700' : 'hover:bg-gray-700/50'}`}
                   onClick={() => handleTeamSelect(team.id)}
@@ -122,38 +122,60 @@ const TeamManagement = () => {
               <h2 className="text-xl font-bold text-white">{activeTeam.name} Details</h2>
               <p className="text-gray-400">Team ID: {activeTeam.id}</p>
             </div>
-            <div>
+            <div className="flex gap-4">
+              <button
+                className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md"
+                onClick={async () => {
+                  try {
+                    const response = await fetch('https://2u7u5x01ek.execute-api.ap-south-1.amazonaws.com/test/', {
+                      method: 'GET'
+                    });
+
+                    if (response.ok) {
+                      const data = await response.json();
+                      console.log('API Response:', data);
+                      alert('GET request successful!');
+                    } else {
+                      alert('GET request failed. Status: ' + response.status);
+                    }
+                  } catch (error) {
+                    console.error('Error fetching data:', error);
+                    alert('An error occurred while making the request.');
+                  }
+
+
+                }}
+              >
+                Initiate Key
+              </button>
               <button
                 className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-md"
-                onClick={() => navigate('/create-transaction')} // Update this path to match your routing configuration
+                onClick={() => navigate('/create-transaction')}
               >
                 New Transaction
               </button>
             </div>
           </div>
-          
+
           <div className="bg-gray-800 rounded-lg overflow-hidden">
             <div className="flex border-b border-gray-700">
               <button
-                className={`py-3 px-6 focus:outline-none ${
-                  activeTab === 'members' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-700 hover:text-white'
-                }`}
+                className={`py-3 px-6 focus:outline-none ${activeTab === 'members' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-700 hover:text-white'
+                  }`}
                 onClick={() => setActiveTab('members')}
               >
                 Members ({activeTeam.memberCount || 0})
               </button>
               <button
-                className={`py-3 px-6 focus:outline-none ${
-                  activeTab === 'pending' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-700 hover:text-white'
-                }`}
+                className={`py-3 px-6 focus:outline-none ${activeTab === 'pending' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-700 hover:text-white'
+                  }`}
                 onClick={() => setActiveTab('pending')}
               >
                 Pending Transactions ({pendingTransactions.length})
               </button>
               <button
-                className={`py-3 px-6 focus:outline-none ${
-                  activeTab === 'completed' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-700 hover:text-white'
-                }`}
+                className={`py-3 px-6 focus:outline-none ${activeTab === 'completed' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-700 hover:text-white'
+                  }`}
                 onClick={() => setActiveTab('completed')}
               >
                 Completed Transactions ({transactionHistory.length})
@@ -174,7 +196,7 @@ const TeamManagement = () => {
                   createdBy={activeTeam.createdBy}
                 />
               )}
-              
+
               {activeTab === 'pending' && (
                 <TransactionHistory
                   transactions={pendingTransactions}
@@ -182,7 +204,7 @@ const TeamManagement = () => {
                   status="pending"
                 />
               )}
-              
+
               {activeTab === 'completed' && (
                 <TransactionHistory
                   transactions={transactionHistory}
@@ -194,7 +216,7 @@ const TeamManagement = () => {
           </div>
         </div>
       )}
-      
+
       {/* Delete Team Confirmation Modal */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -203,13 +225,13 @@ const TeamManagement = () => {
             <p className="text-gray-300 mb-6">
               Are you sure you want to delete this team vault? This action requires consent from all team members and can only be completed when the vault contains no assets.
             </p>
-            
+
             {deleteError && (
               <div className="bg-red-900/50 border border-red-500 text-red-300 px-4 py-3 rounded mb-4">
                 {deleteError}
               </div>
             )}
-            
+
             <div className="flex justify-end space-x-4">
               <button
                 className="px-4 py-2 bg-gray-700 text-white rounded-md hover:bg-gray-600"

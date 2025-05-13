@@ -1,22 +1,33 @@
 // src/pages/CreateTransaction.js
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useTeam } from '../context/TeamContext';
-import { useWallet } from '../context/WalletContext';
+import { useVault } from '../context/VaultContext';
 
 const CreateTransaction = () => {
-  const { teamState, initiateTransaction } = useTeam();
-  const { walletState } = useWallet();
+  const { 
+    activeTeam, 
+    personalAssets, 
+    createTeamTransaction, 
+    isLoading, 
+    error: vaultError 
+  } = useVault();
+  
   const navigate = useNavigate();
   
   const [formData, setFormData] = useState({
     amount: '',
-    currency: 'ETH',
+    asset: 'ETH',
     recipient: ''
   });
   
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [availableBalance, setAvailableBalance] = useState(0);
+  
+  // Update available balance when asset selection changes
+  useEffect(() => {
+    const selectedAsset = personalAssets.find(a => a.symbol === formData.asset);
+    setAvailableBalance(selectedAsset ? selectedAsset.amount : 0);
+  }, [personalAssets, formData.asset]);
   
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -38,42 +49,38 @@ const CreateTransaction = () => {
       return;
     }
     
-    if (!teamState.currentTeam) {
+    if (!activeTeam) {
       setError('No active team selected');
       return;
     }
     
-    if (!walletState.isConnected) {
-      setError('Please connect your wallet first');
-      return;
-    }
-    
-    setLoading(true);
     try {
-      // Create transaction
-      const newTransaction = initiateTransaction({
+      // Create team transaction
+      const transactionData = {
+        type: 'SEND',
+        asset: formData.asset,
         amount: parseFloat(formData.amount),
-        currency: formData.currency,
         recipient: formData.recipient.trim(),
-        initiatedBy: {
-          id: walletState.address,
-          name: 'Current User' // This would ideally come from a user profile
-        }
-      });
+        teamId: activeTeam.id
+      };
       
-      navigate('/team');
+      const newTransaction = await createTeamTransaction(transactionData);
+      
+      if (newTransaction) {
+        navigate('/team');
+      } else {
+        setError('Failed to create transaction');
+      }
     } catch (err) {
-      setError(err.message || 'Failed to create transaction');
-    } finally {
-      setLoading(false);
+      setError(err.message || vaultError || 'Failed to create transaction');
     }
   };
 
-  // Available currencies
-  const currencies = ['ETH', 'BTC', 'USDC', 'USDT', 'DAI'];
+  // Available assets/currencies
+  const availableAssets = ['ETH', 'BTC', 'USDC', 'USDT', 'DAI'];
 
   // Redirect if no team is selected
-  if (!teamState.currentTeam) {
+  if (!activeTeam) {
     return (
       <div className="flex flex-col items-center justify-center h-64">
         <h2 className="text-2xl font-bold text-white mb-4">No Team Selected</h2>
@@ -95,16 +102,16 @@ const CreateTransaction = () => {
       <div className="bg-gray-800 rounded-lg p-6">
         <div className="mb-4 p-3 bg-gray-700/70 rounded-md">
           <p className="text-gray-300 text-sm">
-            Team: <span className="text-white">{teamState.currentTeam.name}</span>
+            Team: <span className="text-white">{activeTeam.name}</span>
           </p>
           <p className="text-gray-300 text-sm">
-            Required Approvals: <span className="text-white">{teamState.currentTeam.quorum}</span>
+            Required Approvals: <span className="text-white">{activeTeam.memberCount}</span>
           </p>
         </div>
         
-        {error && (
+        {(error || vaultError) && (
           <div className="bg-red-900/50 border border-red-500 text-red-300 px-4 py-3 rounded mb-6">
-            {error}
+            {error || vaultError}
           </div>
         )}
         
@@ -113,7 +120,7 @@ const CreateTransaction = () => {
             <div className="flex justify-between">
               <label htmlFor="amount" className="block text-white mb-2">Amount</label>
               <span className="text-gray-400 text-sm">
-                Available: {walletState.balance} {formData.currency}
+                Available: {availableBalance} {formData.asset}
               </span>
             </div>
             <div className="flex">
@@ -128,13 +135,13 @@ const CreateTransaction = () => {
                 placeholder="0.00"
               />
               <select
-                name="currency"
-                value={formData.currency}
+                name="asset"
+                value={formData.asset}
                 onChange={handleChange}
                 className="bg-gray-600 text-white border border-gray-600 rounded-r-md py-2 px-4 focus:outline-none focus:border-yellow-500"
               >
-                {currencies.map(currency => (
-                  <option key={currency} value={currency}>{currency}</option>
+                {availableAssets.map(asset => (
+                  <option key={asset} value={asset}>{asset}</option>
                 ))}
               </select>
             </div>
@@ -157,9 +164,9 @@ const CreateTransaction = () => {
             <button
               type="submit"
               className="w-full bg-yellow-500 hover:bg-yellow-600 text-white py-2 px-4 rounded-md disabled:opacity-50"
-              disabled={loading}
+              disabled={isLoading}
             >
-              {loading ? 'Creating...' : 'Create Transaction'}
+              {isLoading ? 'Creating...' : 'Create Transaction'}
             </button>
           </div>
         </form>
