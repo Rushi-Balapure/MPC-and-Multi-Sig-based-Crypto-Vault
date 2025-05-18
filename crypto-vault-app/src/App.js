@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import MainLayout from './components/layout/MainLayout';
 import Dashboard from './pages/Dashboard';
 import Buy from './pages/Buy';
@@ -14,6 +14,16 @@ import { VaultProvider } from './context/VaultContext';
 import { TeamProvider } from './context/TeamContext';
 import TransactionHistory from './pages/TransactionHistory';
 import CreateTransaction from './pages/CreateTransaction';
+import Auth from './pages/Auth';
+
+const PrivateRoute = ({ children }) => {
+  // This would normally check auth state from your context
+  // For now, let's create a simple check
+  // const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
+  // return isAuthenticated ? children : <Navigate to="/auth" />;
+
+  return children;
+};
 
 function App() {
   return (
@@ -21,7 +31,15 @@ function App() {
       <TeamProvider>
         <Router>
           <Routes>
-            <Route path="/" element={<MainLayout />}>
+            {/* Auth routes - accessible without authentication */}
+            <Route path="/auth" element={<Auth />} />
+
+            {/* Protected routes - require authentication */}
+            <Route path="/" element={
+              <PrivateRoute>
+                <MainLayout />
+              </PrivateRoute>
+            }>
               <Route index element={<Dashboard />} />
               <Route path="receive" element={<Receive />} />
               <Route path="send" element={<Send />} />
@@ -34,6 +52,8 @@ function App() {
               <Route path="/transactions" element={<TransactionHistory />} /> 
               <Route path="/create-transaction" element={<CreateTransaction />} />
             </Route>
+            {/* Catch all redirect to auth page */}
+            <Route path="*" element={<Navigate to="/auth" replace />} />
           </Routes>
         </Router>
       </TeamProvider>
