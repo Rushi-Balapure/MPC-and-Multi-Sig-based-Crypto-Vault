@@ -19,10 +19,10 @@ import Auth from './pages/Auth';
 const PrivateRoute = ({ children }) => {
   // This would normally check auth state from your context
   // For now, let's create a simple check
-  // const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
-  // return isAuthenticated ? children : <Navigate to="/auth" />;
+  const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
+  return isAuthenticated ? children : <Navigate to="/auth" />;
 
-  return children;
+  //return children;
 };
 
 function App() {

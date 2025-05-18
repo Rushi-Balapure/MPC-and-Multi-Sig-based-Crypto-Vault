@@ -1,5 +1,7 @@
 // src/context/VaultContext.js
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import axios from 'axios';
+
 import { fetchUserAssets, fetchTeamAssets } from '../services/api'; // Assuming these exist
 
 // Create a context for the Vault
@@ -40,7 +42,7 @@ export const VaultProvider = ({ children }) => {
   const [error, setError] = useState(null);
 
   // Update user info after login
-  const login = async (credentials) => {
+  /*const login = async (credentials) => {
     setIsLoading(true);
     try {
       // API call to authenticate user would happen here
@@ -63,7 +65,35 @@ export const VaultProvider = ({ children }) => {
     } finally {
       setIsLoading(false);
     }
-  };
+  };*/
+  const login = async (credentials) => {
+  setIsLoading(true);
+  try {
+    // Replace with your actual API endpoint
+    const response = await axios.post('http://localhost:3000/login', credentials);
+
+    const userData = response.data;
+
+    setUser({
+      id: userData.id,
+      email: userData.email,
+      name: userData.name,
+      isAuthenticated: true
+    });
+
+    // Load user's personal assets, teams, and invitations
+    await loadPersonalAssets(userData.id);
+    await loadUserTeams(userData.id);
+    await loadPendingInvitations(userData.email);
+
+    setError(null);
+  } catch (err) {
+    setError(err.response?.data?.message || 'Login failed');
+  } finally {
+    setIsLoading(false);
+  }
+};
+
 
   // Reset context on logout
   const logout = () => {

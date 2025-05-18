@@ -1,6 +1,8 @@
 console.log('👋 Server is starting...');
 
 import express from 'express';
+import session from 'express-session';
+import bodyParser from 'body-parser';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { SESClient, GetSendQuotaCommand, VerifyEmailAddressCommand } from '@aws-sdk/client-ses';
@@ -28,6 +30,25 @@ const testSESConnection = async () => {
 };
 
 const app = express();
+app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.json());
+
+app.use(session({
+    secret: 'yourSecretKey', // TODO: use process.env.SESSION_SECRET in production
+    resave: false,
+    saveUninitialized: true,
+    cookie: { secure: false }  // Set true if using HTTPS
+}));
+// Dummy users (replace with DB later)
+/*const users = {
+    alice: 'password123',
+    bob: 'securepass'
+};*/
+const users = {
+    'alice@example.com': 'password123',
+    'bob@example.com': 'securepass'
+};
+
 
 // 1) Configure CORS once, before any routes:
 const corsOptions = {
@@ -67,6 +88,43 @@ app.post('/verify-email', async (req, res) => {
     }
 
 });
+// Login route
+/*app.post('/login', (req, res) => {
+    const { username, password } = req.body;
+    if (users[username] && users[username] === password) {
+        req.session.user = username;
+        return res.status(200).send({ message: 'Login successful' });
+    }
+    res.status(401).send({ error: 'Invalid credentials' });
+}); */
+app.post('/login', (req, res) => {
+    const { email, password } = req.body;
+    if (users[email] && users[email] === password) {
+        req.session.user = email;
+        return res.status(200).send({ message: 'Login successful' });
+    }
+    res.status(401).send({ error: 'Invalid credentials' });
+});
+
+// Logout route
+app.get('/logout', (req, res) => {
+    req.session.destroy(() => {
+        res.clearCookie('connect.sid');
+        res.status(200).send({ message: 'Logged out' });
+    });
+});
+
+// Middleware to check login
+function requireLogin(req, res, next) {
+    if (req.session.user) return next();
+    res.status(401).send({ error: 'Not authenticated' });
+}
+
+// Protected dashboard route
+app.get('/dashboard', requireLogin, (req, res) => {
+    res.send({ message: `Welcome, ${req.session.user}` });
+});
+
 
 // Start the server
 app.listen(5001, async () => {
