@@ -1,3 +1,4 @@
+// index.js (Backend)
 console.log('👋 Server is starting...');
 
 import express from 'express';
@@ -6,6 +7,8 @@ import bodyParser from 'body-parser';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { SESClient, GetSendQuotaCommand, VerifyEmailAddressCommand } from '@aws-sdk/client-ses';
+import jwt from 'jsonwebtoken';
+import jwksClient from 'jwks-rsa';
 
 dotenv.config();  // Load environment variables from .env file
 
@@ -30,44 +33,90 @@ const testSESConnection = async () => {
 };
 
 const app = express();
-app.use(bodyParser.urlencoded({ extended: false }));
-app.use(bodyParser.json());
 
-app.use(session({
-    secret: 'yourSecretKey', // TODO: use process.env.SESSION_SECRET in production
-    resave: false,
-    saveUninitialized: true,
-    cookie: { secure: false }  // Set true if using HTTPS
-}));
-// Dummy users (replace with DB later)
-/*const users = {
-    alice: 'password123',
-    bob: 'securepass'
-};*/
-const users = {
-    'alice@example.com': 'password123',
-    'bob@example.com': 'securepass'
+// Configure Cognito JWT verification
+const COGNITO_USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || 'ap-south-1_tyCJFcHdz';
+const COGNITO_REGION = process.env.COGNITO_REGION || 'ap-south-1';
+
+// Setup JWKS client for token verification
+const client = jwksClient({
+    jwksUri: `https://cognito-idp.${COGNITO_REGION}.amazonaws.com/${COGNITO_USER_POOL_ID}/.well-known/jwks.json`
+});
+
+function getKey(header, callback) {
+    client.getSigningKey(header.kid, function (err, key) {
+        if (err) {
+            callback(err);
+            return;
+        }
+        const signingKey = key.getPublicKey();
+        callback(null, signingKey);
+    });
+}
+
+// JWT verification middleware
+const verifyTokenMiddleware = (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+        return res.status(401).json({ message: 'Missing Authorization header' });
+    }
+
+    const token = authHeader.split(' ')[1];
+    if (!token) {
+        return res.status(401).json({ message: 'Missing token' });
+    }
+
+    jwt.verify(token, getKey, {
+        algorithms: ['RS256'],
+        issuer: `https://cognito-idp.${COGNITO_REGION}.amazonaws.com/${COGNITO_USER_POOL_ID}`
+    }, (err, decoded) => {
+        if (err) {
+            console.error('Token verification error:', err);
+            return res.status(401).json({ message: 'Unauthorized', error: err.message });
+        }
+        
+        req.user = decoded;
+        next();
+    });
 };
 
-
-// 1) Configure CORS once, before any routes:
+// 1) Configure CORS
 const corsOptions = {
-    origin: 'http://localhost:3000',      // your React app
-    methods: ['GET', 'POST', 'OPTIONS'],    // allowed methods
-    allowedHeaders: ['Content-Type'],     // allowed headers
-    credentials: true                     // allow cookies/auth if needed
+    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
 };
 app.use(cors(corsOptions));
 
-// 2) Explicitly handle preflight for every path:
+// 2) Explicitly handle preflight for every path
 app.options('/*', cors(corsOptions));
 
-// 3) Body parser:
-app.use(express.json());
+// 3) Body parser middleware
+app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.json());
 
+// Session middleware (for non-JWT routes)
+app.use(session({
+    secret: process.env.SESSION_SECRET || 'yourSecretKey', 
+    resave: false,
+    saveUninitialized: true,
+    cookie: { 
+        secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
+        maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    }
+}));
+
+// Test cognito JWT route
+app.get('/api/verify-token', verifyTokenMiddleware, (req, res) => {
+    res.status(200).json({
+        message: 'Token is valid',
+        user: req.user
+    });
+});
 
 // Endpoint to verify email
-app.post('/verify-email', async (req, res) => {
+app.post('/api/verify-email', async (req, res) => {
     const { emails } = req.body;
 
     console.log('Emails received from frontend:', emails);
@@ -86,48 +135,29 @@ app.post('/verify-email', async (req, res) => {
         console.error('Error verifying emails:', error);
         res.status(500).send({ error: error.message });
     }
-
-});
-// Login route
-/*app.post('/login', (req, res) => {
-    const { username, password } = req.body;
-    if (users[username] && users[username] === password) {
-        req.session.user = username;
-        return res.status(200).send({ message: 'Login successful' });
-    }
-    res.status(401).send({ error: 'Invalid credentials' });
-}); */
-app.post('/login', (req, res) => {
-    const { email, password } = req.body;
-    if (users[email] && users[email] === password) {
-        req.session.user = email;
-        return res.status(200).send({ message: 'Login successful' });
-    }
-    res.status(401).send({ error: 'Invalid credentials' });
 });
 
-// Logout route
-app.get('/logout', (req, res) => {
-    req.session.destroy(() => {
-        res.clearCookie('connect.sid');
-        res.status(200).send({ message: 'Logged out' });
+// Protected data route using Cognito JWT
+app.get('/api/secure-data', verifyTokenMiddleware, (req, res) => {
+    res.json({ 
+        message: 'This is secured data',
+        user: req.user,
+        data: {
+            // Your secure data here
+            vaultInfo: "This is your crypto vault information",
+            timestamp: new Date().toISOString()
+        }
     });
 });
 
-// Middleware to check login
-function requireLogin(req, res, next) {
-    if (req.session.user) return next();
-    res.status(401).send({ error: 'Not authenticated' });
-}
-
-// Protected dashboard route
-app.get('/dashboard', requireLogin, (req, res) => {
-    res.send({ message: `Welcome, ${req.session.user}` });
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+    res.status(200).json({ status: 'OK', message: 'Server is running' });
 });
 
-
 // Start the server
-app.listen(5001, async () => {
-    console.log('🚀 Backend server is running on [http://localhost:5001]');
+const PORT = process.env.PORT || 5001;
+app.listen(PORT, async () => {
+    console.log(`🚀 Backend server is running on [http://localhost:${PORT}]`);
     await testSESConnection(); // Run SES connection test on startup
 });
