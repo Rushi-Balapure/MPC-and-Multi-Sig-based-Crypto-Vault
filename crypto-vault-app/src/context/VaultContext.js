@@ -1,18 +1,13 @@
 // src/context/VaultContext.js
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { fetchUserAssets, fetchTeamAssets } from '../services/api'; // Assuming these exist
+import { useAuthContext } from './AuthContext'; // Import AuthContext
 
 // Create a context for the Vault
 const VaultContext = createContext();
 
 export const VaultProvider = ({ children }) => {
-  // User authentication and profile information
-  const [user, setUser] = useState({
-    id: '',
-    email: '',
-    name: '',
-    isAuthenticated: false
-  });
+  const { token, user: authUser, isLoggedIn } = useAuthContext(); // Use AuthContext
 
   // Personal assets owned by the user
   const [personalAssets, setPersonalAssets] = useState([]);
@@ -39,35 +34,35 @@ export const VaultProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Update user info after login
-  const login = async (credentials) => {
+  // Effect to load user data when authenticated
+  useEffect(() => {
+    if (isLoggedIn && authUser) {
+      loadUserData(authUser.id);
+    } else {
+      // Clear vault data when logged out
+      resetVaultData();
+    }
+  }, [isLoggedIn, authUser]);
+
+  // Load user data including assets, teams, and invitations
+  const loadUserData = async (userId) => {
     setIsLoading(true);
     try {
-      // API call to authenticate user would happen here
-      // For now, mock it with direct assignment
-      const userData = { id: 'user123', email: credentials.email, name: 'User Name', isAuthenticated: true };
-      setUser(userData);
-      
-      // Load user's personal assets
-      await loadPersonalAssets(userData.id);
-      
-      // Load teams user belongs to
-      await loadUserTeams(userData.id);
-      
-      // Load pending invitations
-      await loadPendingInvitations(userData.email);
-      
+      await Promise.all([
+        loadPersonalAssets(userId),
+        loadUserTeams(userId),
+        loadPendingInvitations(authUser.email)
+      ]);
       setError(null);
     } catch (err) {
-      setError(err.message || 'Login failed');
+      setError('Failed to load user data');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Reset context on logout
-  const logout = () => {
-    setUser({ id: '', email: '', name: '', isAuthenticated: false });
+  // Reset vault data on logout
+  const resetVaultData = () => {
     setTeams([]);
     setPersonalAssets([]);
     setActiveTeam(null);
@@ -120,7 +115,7 @@ export const VaultProvider = ({ children }) => {
         id: `team-${Date.now()}`,
         name: teamData.name,
         memberCount: teamData.members.length,
-        createdBy: user.id,
+        createdBy: authUser.id,
         members: teamData.members,
         createdAt: new Date().toISOString()
       };
@@ -220,7 +215,7 @@ export const VaultProvider = ({ children }) => {
         status: 'PENDING_APPROVAL',
         approvalsNeeded: activeTeam.memberCount, // All members need to approve
         approvalsReceived: 1, // Creator automatically approves
-        createdBy: user.id,
+        createdBy: authUser.id,
         createdAt: new Date().toISOString()
       };
       
@@ -554,7 +549,7 @@ export const VaultProvider = ({ children }) => {
 
   return (
     <VaultContext.Provider value={{ 
-      user,
+      isAuthenticated: isLoggedIn, // Map from AuthContext
       isLoading,
       error,
       teams,
@@ -564,8 +559,6 @@ export const VaultProvider = ({ children }) => {
       pendingInvitations,
       transactionHistory,
       pendingTransactions,
-      login,
-      logout,
       createTeam,
       selectTeam,
       respondToInvitation,
@@ -574,7 +567,9 @@ export const VaultProvider = ({ children }) => {
       addTeamMember,
       removeTeamMember,
       buyAsset,
-      sellAsset
+      sellAsset,
+      deleteTeam,
+      transferAssets
     }}>
       {children}
     </VaultContext.Provider>
@@ -583,3 +578,5 @@ export const VaultProvider = ({ children }) => {
 
 // Hook to use the Vault context
 export const useVault = () => useContext(VaultContext);
+
+export default VaultContext;
