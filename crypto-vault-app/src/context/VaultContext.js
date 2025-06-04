@@ -34,6 +34,9 @@ export const VaultProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // Add approval tracking state
+  const [memberApprovals, setMemberApprovals] = useState({});
+
   // Effect to load user data when authenticated
   useEffect(() => {
     if (isLoggedIn && authUser) {
@@ -545,7 +548,82 @@ export const VaultProvider = ({ children }) => {
     } finally {
       setIsLoading(false);
     }
-  };      
+  };
+
+  const handleMemberApproval = async (teamId, memberId, shardValue) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      // Validate inputs
+      if (!teamId || !memberId || !shardValue) {
+        throw new Error('Missing required approval parameters');
+      }
+
+      const response = await fetch('https://2zfmmwd269.execute-api.ap-south-1.amazonaws.com', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          team_id: teamId,
+          shard_id: memberId,
+          shard_value: shardValue
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to approve member');
+      }
+
+      const result = await response.json();
+
+      // Update approval state
+      setMemberApprovals(prev => ({
+        ...prev,
+        [memberId]: {
+          approved: true,
+          timestamp: new Date().toISOString(),
+          teamId
+        }
+      }));
+
+      // Update team member status if needed
+      const updatedTeams = teams.map(team => {
+        if (team.id === teamId) {
+          return {
+            ...team,
+            members: team.members.map(member => {
+              if (member.id === memberId) {
+                return {
+                  ...member,
+                  approved: true,
+                  approvalTimestamp: new Date().toISOString()
+                };
+              }
+              return member;
+            })
+          };
+        }
+        return team;
+      });
+
+      setTeams(updatedTeams);
+      
+      // If this was for the active team, update it
+      if (activeTeam && activeTeam.id === teamId) {
+        setActiveTeam(updatedTeams.find(t => t.id === teamId));
+      }
+
+      return result;
+    } catch (error) {
+      setError(error.message || 'Failed to process approval');
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <VaultContext.Provider value={{ 
@@ -569,7 +647,9 @@ export const VaultProvider = ({ children }) => {
       buyAsset,
       sellAsset,
       deleteTeam,
-      transferAssets
+      transferAssets,
+      memberApprovals,
+      handleMemberApproval,
     }}>
       {children}
     </VaultContext.Provider>
