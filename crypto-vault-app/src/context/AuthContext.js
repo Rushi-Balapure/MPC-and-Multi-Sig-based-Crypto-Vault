@@ -19,77 +19,48 @@ export const AuthProvider = ({ children }) => {
 
   // Check for existing Cognito session on load
   useEffect(() => {
-    const checkCognitoSession = async () => {
-      try {
-        setIsLoading(true);
-        
-        // Check if there's an active Cognito session
-        const cognitoUser = getCurrentUser();
-        
-        if (cognitoUser) {
-          try {
-            const session = await getSession();
-            
-            if (session && session.isValid()) {
-              // Get the id token from the session
-              const idToken = session.getIdToken().getJwtToken();
-              
-              // Get user attributes
-              cognitoUser.getUserAttributes((err, attributes) => {
-                if (err) {
-                  console.error("Error getting user attributes:", err);
-                  setIsLoading(false);
-                  return;
-                }
-                
-                // Create a user object from attributes
-                const userData = {};
-                attributes.forEach(attr => {
-                  userData[attr.getName()] = attr.getValue();
-                });
-                
-                // Set the token and user in state
-                setToken(idToken);
-                setUser(userData);
-                setIsLoggedIn(true);
-                
-                // Store in localStorage as backup
-                localStorage.setItem("vault_jwt", idToken);
-                localStorage.setItem("vault_user", JSON.stringify(userData));
-                
-                setIsLoading(false);
-              });
-            } else {
-              // Session exists but is not valid
-              localStorage.removeItem("vault_jwt");
-              localStorage.removeItem("vault_user");
-              setIsLoading(false);
-            }
-          } catch (error) {
-            console.error("Session error:", error);
-            setIsLoading(false);
-          }
-        } else {
-          // No Cognito session, but check localStorage as fallback
-          const savedToken = localStorage.getItem("vault_jwt");
-          const savedUser = JSON.parse(localStorage.getItem("vault_user") || "null");
-          
-          if (savedToken) {
-            setToken(savedToken);
-            setUser(savedUser);
-            setIsLoggedIn(true);
-          }
-          
-          setIsLoading(false);
+  const checkCognitoSession = async () => {
+    try {
+      setIsLoading(true);
+
+      // First, check with the Express backend if the session is valid
+      const response = await fetch("http://localhost:3001/api/session", {
+        method: "GET",
+        credentials: "include", // important: sends cookie with request
+      });
+
+      if (response.ok) {
+        const { user: sessionUser } = await response.json();
+
+        // Use localStorage for fallback token and enrich user
+        const savedToken = localStorage.getItem("vault_jwt");
+        const savedUser = JSON.parse(localStorage.getItem("vault_user") || "null");
+
+        if (savedToken && savedUser) {
+          setToken(savedToken);
+          setUser(savedUser);
+          setIsLoggedIn(true);
+        } else if (sessionUser) {
+          setUser(sessionUser);
+          setIsLoggedIn(true);
         }
-      } catch (error) {
-        console.error("Authentication error:", error);
-        setIsLoading(false);
+      } else {
+        // Server session invalid, clear localStorage
+        setToken(null);
+        setUser(null);
+        setIsLoggedIn(false);
+        localStorage.removeItem("vault_jwt");
+        localStorage.removeItem("vault_user");
       }
-    };
-    
-    checkCognitoSession();
-  }, []);
+    } catch (error) {
+      console.error("AuthContext: session check error", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  checkCognitoSession();
+}, []);
 
   // Modified login function to accept token and userData directly
   const login = (idToken, userData) => {
