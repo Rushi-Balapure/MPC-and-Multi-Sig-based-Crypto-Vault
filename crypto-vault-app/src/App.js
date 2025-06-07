@@ -19,40 +19,170 @@ import TransactionHistory from './pages/TransactionHistory';
 import CreateTransaction from './pages/CreateTransaction';
 import Auth from './pages/Auth';
 
-// Updated PrivateRoute to use AuthContext directly
+// Updated PrivateRoute to handle loading state and session errors
 const PrivateRoute = ({ children }) => {
-  const { isLoggedIn } = useContext(AuthContext);
+  const { isLoggedIn, isLoading, sessionError } = useContext(AuthContext);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-900">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-yellow-500"></div>
+      </div>
+    );
+  }
+
+  if (sessionError) {
+    return <Navigate to="/auth" state={{ error: sessionError }} />;
+  }
+
   return isLoggedIn ? children : <Navigate to="/auth" />;
 };
 
-const AppRoutes = () => (
-  <Routes>
-    {/* Public Auth route */}
-    <Route path="/auth" element={<Auth />} />
+// Updated AppRoutes component to handle auth state
+const AppRoutes = () => {
+  const { isLoggedIn, isLoading } = useContext(AuthContext);
 
-    {/* Protected routes inside MainLayout */}
-    <Route path="/" element={
-      <PrivateRoute>
-        <MainLayout />
-      </PrivateRoute>
-    }>
-      <Route index element={<Dashboard />} />
-      <Route path="receive" element={<Receive />} />
-      <Route path="send" element={<Send />} />
-      <Route path="buy" element={<Buy />} />
-      <Route path="sell" element={<Sell />} />
-      <Route path="profile" element={<UserProfile />} />
-      <Route path="team" element={<TeamManagement />} />
-      <Route path="team/create" element={<CreateTeam />} />
-      <Route path="team/transaction/:id" element={<TransactionDetails />} />
-      <Route path="/transactions" element={<TransactionHistory />} />
-      <Route path="/create-transaction" element={<CreateTransaction />} />
-    </Route>
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-900">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-yellow-500"></div>
+      </div>
+    );
+  }
 
-    {/* Catch-all redirect to auth */}
-    <Route path="*" element={<Navigate to="/auth" replace />} />
-  </Routes>
-);
+  return (
+    <Routes>
+      <Route
+        path="/auth"
+        element={isLoggedIn ? <Navigate to="/" /> : <Auth />}
+      />
+      
+      <Route
+        path="/"
+        element={
+          <PrivateRoute>
+            <MainLayout>
+              <Dashboard />
+            </MainLayout>
+          </PrivateRoute>
+        }
+      />
+      
+      <Route
+        path="/buy"
+        element={
+          <PrivateRoute>
+            <MainLayout>
+              <Buy />
+            </MainLayout>
+          </PrivateRoute>
+        }
+      />
+      
+      <Route
+        path="/sell"
+        element={
+          <PrivateRoute>
+            <MainLayout>
+              <Sell />
+            </MainLayout>
+          </PrivateRoute>
+        }
+      />
+      
+      <Route
+        path="/send"
+        element={
+          <PrivateRoute>
+            <MainLayout>
+              <Send />
+            </MainLayout>
+          </PrivateRoute>
+        }
+      />
+      
+      <Route
+        path="/receive"
+        element={
+          <PrivateRoute>
+            <MainLayout>
+              <Receive />
+            </MainLayout>
+          </PrivateRoute>
+        }
+      />
+      
+      <Route
+        path="/profile"
+        element={
+          <PrivateRoute>
+            <MainLayout>
+              <UserProfile />
+            </MainLayout>
+          </PrivateRoute>
+        }
+      />
+      
+      <Route
+        path="/team"
+        element={
+          <PrivateRoute>
+            <MainLayout>
+              <TeamManagement />
+            </MainLayout>
+          </PrivateRoute>
+        }
+      />
+      
+      <Route
+        path="/team/create"
+        element={
+          <PrivateRoute>
+            <MainLayout>
+              <CreateTeam />
+            </MainLayout>
+          </PrivateRoute>
+        }
+      />
+      
+      <Route
+        path="/transactions"
+        element={
+          <PrivateRoute>
+            <MainLayout>
+              <TransactionHistory />
+            </MainLayout>
+          </PrivateRoute>
+        }
+      />
+      
+      <Route
+        path="/transactions/:id"
+        element={
+          <PrivateRoute>
+            <MainLayout>
+              <TransactionDetails />
+            </MainLayout>
+          </PrivateRoute>
+        }
+      />
+      
+      <Route
+        path="/transactions/create"
+        element={
+          <PrivateRoute>
+            <MainLayout>
+              <CreateTransaction />
+            </MainLayout>
+          </PrivateRoute>
+        }
+      />
+      
+      {/* Catch all route - redirect to dashboard */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+};
 
 function App() {
   return (

@@ -1,12 +1,13 @@
 // src/pages/Auth.js
-import React, { useState, useContext } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useContext, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { AuthContext } from "../context/AuthContext";
 import Button from '../components/common/Button';
 import { signIn, signUp, confirmRegistration } from '../utils/cognitoAuth';
 
 const Auth = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { login } = useContext(AuthContext);
   
   const [isLogin, setIsLogin] = useState(true);
@@ -23,6 +24,16 @@ const Auth = () => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [signupEmail, setSignupEmail] = useState('');
+
+  // Handle session errors passed from PrivateRoute
+  useEffect(() => {
+    const sessionError = location.state?.error;
+    if (sessionError) {
+      setError(sessionError);
+      // Clear the error from location state
+      window.history.replaceState({}, document.title);
+    }
+  }, [location]);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -100,7 +111,7 @@ const Auth = () => {
       // Extract token and login
       const idToken = session.getIdToken().getJwtToken();
       const userData = { email: formData.email };
-      login(idToken, userData);
+      await login(idToken, userData);
       navigate('/');
     } catch (err) {
       console.error('New password error:', err);
@@ -133,7 +144,7 @@ const Auth = () => {
         
         const idToken = result.getIdToken().getJwtToken();
         const userData = { email: signupEmail };
-        login(idToken, userData);
+        await login(idToken, userData);
         navigate('/');
         return;
       }
@@ -154,7 +165,7 @@ const Auth = () => {
         const userData = { email: formData.email };
         
         // Use context login for storing tokens and user data
-        login(idToken, userData);
+        await login(idToken, userData);
         navigate('/'); // navigate to dashboard
       } else {
         // Sign up using Cognito - email is both the username and email attribute
@@ -175,6 +186,13 @@ const Auth = () => {
     setShowConfirmation(false);
     setNewPasswordRequired(false);
     setError('');
+    setFormData({
+      email: '',
+      password: '',
+      confirmPassword: '',
+      confirmationCode: '',
+      newPassword: ''
+    });
   };
   
   return (
@@ -189,126 +207,118 @@ const Auth = () => {
           </p>
         </div>
         
-        <div className="bg-gray-800 rounded-lg p-6 shadow-lg">
-          <h2 className="text-xl font-bold text-white mb-6">
-            {newPasswordRequired ? 'Set New Password' :
-             isLogin ? 'Login' : 
-             showConfirmation ? 'Confirm Registration' : 'Sign Up'}
-          </h2>
+        <div className="bg-gray-800 rounded-lg p-8">
+          {error && (
+            <div className="mb-6 p-4 bg-red-900/50 border border-red-500 rounded-md text-red-200 text-sm">
+              {error}
+            </div>
+          )}
           
-          {newPasswordRequired ? (
-            <form onSubmit={handleCompleteNewPassword}>
-              <div className="mb-4">
-                <p className="text-gray-300 mb-4">
-                  Your account requires a password reset. Please set a new password.
+          <form onSubmit={newPasswordRequired ? handleCompleteNewPassword : handleSubmit}>
+            {!showConfirmation && !newPasswordRequired && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-gray-300 mb-2" htmlFor="email">
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    id="email"
+                    name="email"
+                    value={formData.email}
+                    onChange={handleChange}
+                    className="w-full bg-gray-700 border border-gray-600 rounded-md px-4 py-2 text-white focus:outline-none focus:border-yellow-500"
+                    placeholder="Enter your email"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-gray-300 mb-2" htmlFor="password">
+                    Password
+                  </label>
+                  <input
+                    type="password"
+                    id="password"
+                    name="password"
+                    value={formData.password}
+                    onChange={handleChange}
+                    className="w-full bg-gray-700 border border-gray-600 rounded-md px-4 py-2 text-white focus:outline-none focus:border-yellow-500"
+                    placeholder="Enter your password"
+                  />
+                </div>
+                
+                {!isLogin && (
+                  <div>
+                    <label className="block text-gray-300 mb-2" htmlFor="confirmPassword">
+                      Confirm Password
+                    </label>
+                    <input
+                      type="password"
+                      id="confirmPassword"
+                      name="confirmPassword"
+                      value={formData.confirmPassword}
+                      onChange={handleChange}
+                      className="w-full bg-gray-700 border border-gray-600 rounded-md px-4 py-2 text-white focus:outline-none focus:border-yellow-500"
+                      placeholder="Confirm your password"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {showConfirmation && (
+              <div>
+                <label className="block text-gray-300 mb-2" htmlFor="confirmationCode">
+                  Confirmation Code
+                </label>
+                <input
+                  type="text"
+                  id="confirmationCode"
+                  name="confirmationCode"
+                  value={formData.confirmationCode}
+                  onChange={handleChange}
+                  className="w-full bg-gray-700 border border-gray-600 rounded-md px-4 py-2 text-white focus:outline-none focus:border-yellow-500"
+                  placeholder="Enter confirmation code"
+                />
+                <p className="mt-2 text-sm text-gray-400">
+                  Please check your email for the confirmation code.
                 </p>
-                <label className="block text-white mb-2">New Password</label>
+              </div>
+            )}
+            
+            {newPasswordRequired && (
+              <div>
+                <label className="block text-gray-300 mb-2" htmlFor="newPassword">
+                  New Password
+                </label>
                 <input
                   type="password"
+                  id="newPassword"
                   name="newPassword"
                   value={formData.newPassword}
                   onChange={handleChange}
-                  className="w-full bg-gray-700 text-white py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full bg-gray-700 border border-gray-600 rounded-md px-4 py-2 text-white focus:outline-none focus:border-yellow-500"
                   placeholder="Enter new password"
                 />
+                <p className="mt-2 text-sm text-gray-400">
+                  Please set a new password for your account.
+                </p>
               </div>
-              
-              {error && (
-                <div className="mb-4 p-3 bg-red-900/50 border border-red-500 rounded-md text-red-200 text-sm">
-                  {error}
-                </div>
-              )}
-              
-              <div className="mt-6">
-                <Button 
-                  variant="primary" 
-                  fullWidth 
-                  type="submit"
-                  disabled={isLoading}
-                >
-                  {isLoading ? 'Please wait...' : 'Set New Password'}
-                </Button>
-              </div>
-            </form>
-          ) : (
-            <form onSubmit={handleSubmit}>
-              {showConfirmation ? (
-                <div className="mb-4">
-                  <p className="text-gray-300 mb-4">
-                    We've sent a confirmation code to your email. Please enter it below to verify your account.
-                  </p>
-                  <label className="block text-white mb-2">Confirmation Code</label>
-                  <input
-                    type="text"
-                    name="confirmationCode"
-                    value={formData.confirmationCode}
-                    onChange={handleChange}
-                    className="w-full bg-gray-700 text-white py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Enter confirmation code"
-                  />
-                </div>
-              ) : (
-                <>
-                  <div className="mb-4">
-                    <label className="block text-white mb-2">Email Address</label>
-                    <input
-                      type="email"
-                      name="email"
-                      value={formData.email}
-                      onChange={handleChange}
-                      className="w-full bg-gray-700 text-white py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="Enter your email"
-                    />
-                  </div>
-                  
-                  <div className="mb-4">
-                    <label className="block text-white mb-2">Password</label>
-                    <input
-                      type="password"
-                      name="password"
-                      value={formData.password}
-                      onChange={handleChange}
-                      className="w-full bg-gray-700 text-white py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="Enter your password"
-                    />
-                  </div>
-                  
-                  {!isLogin && (
-                    <div className="mb-4">
-                      <label className="block text-white mb-2">Confirm Password</label>
-                      <input
-                        type="password"
-                        name="confirmPassword"
-                        value={formData.confirmPassword}
-                        onChange={handleChange}
-                        className="w-full bg-gray-700 text-white py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="Confirm your password"
-                      />
-                    </div>
-                  )}
-                </>
-              )}
-              
-              {error && (
-                <div className="mb-4 p-3 bg-red-900/50 border border-red-500 rounded-md text-red-200 text-sm">
-                  {error}
-                </div>
-              )}
-              
-              <div className="mt-6">
-                <Button 
-                  variant="primary" 
-                  fullWidth 
-                  type="submit"
-                  disabled={isLoading}
-                >
-                  {isLoading ? 'Please wait...' : 
-                    isLogin ? 'Login' : 
-                    showConfirmation ? 'Verify Account' : 'Create Account'}
-                </Button>
-              </div>
-            </form>
-          )}
+            )}
+            
+            <div className="mt-6">
+              <Button 
+                variant="primary" 
+                fullWidth 
+                type="submit"
+                disabled={isLoading}
+              >
+                {isLoading ? 'Please wait...' : 
+                  isLogin ? 'Login' : 
+                  showConfirmation ? 'Verify Account' : 'Create Account'}
+              </Button>
+            </div>
+          </form>
           
           {!showConfirmation && !newPasswordRequired && (
             <div className="mt-4 text-center">

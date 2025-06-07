@@ -7,7 +7,7 @@ import { useAuthContext } from './AuthContext'; // Import AuthContext
 const VaultContext = createContext();
 
 export const VaultProvider = ({ children }) => {
-  const { token, user: authUser, isLoggedIn } = useAuthContext(); // Use AuthContext
+  const { token, user: authUser, isLoggedIn, checkAndRefreshSession } = useAuthContext(); // Use AuthContext
 
   // Personal assets owned by the user
   const [personalAssets, setPersonalAssets] = useState([]);
@@ -47,8 +47,31 @@ export const VaultProvider = ({ children }) => {
     }
   }, [isLoggedIn, authUser]);
 
+  // Effect to handle session expiry
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible') {
+        // Check and refresh session when tab becomes visible
+        const isValid = await checkAndRefreshSession();
+        if (!isValid) {
+          resetVaultData();
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [checkAndRefreshSession]);
+
   // Load user data including assets, teams, and invitations
   const loadUserData = async (userId) => {
+    if (!token) {
+      setError('No valid authentication token');
+      return;
+    }
+
     setIsLoading(true);
     try {
       await Promise.all([
@@ -59,12 +82,20 @@ export const VaultProvider = ({ children }) => {
       setError(null);
     } catch (err) {
       setError('Failed to load user data');
+      // If error is due to invalid token, try to refresh session
+      if (err.message.includes('token') || err.message.includes('unauthorized')) {
+        const isValid = await checkAndRefreshSession();
+        if (isValid) {
+          // Retry loading data after successful refresh
+          await loadUserData(userId);
+        }
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Reset vault data on logout
+  // Reset vault data on logout or session expiry
   const resetVaultData = () => {
     setTeams([]);
     setPersonalAssets([]);
@@ -73,37 +104,53 @@ export const VaultProvider = ({ children }) => {
     setPendingInvitations([]);
     setTransactionHistory([]);
     setPendingTransactions([]);
+    setMemberApprovals({});
+    setError(null);
   };
 
-  // Load personal assets
+  // Load personal assets with authentication
   const loadPersonalAssets = async (userId) => {
     try {
-      const assets = await fetchUserAssets(userId);
+      const assets = await fetchUserAssets(userId, token);
       setPersonalAssets(assets);
     } catch (err) {
       setError('Failed to load personal assets');
+      throw err;
     }
   };
 
-  // Load teams the user belongs to
+  // Load teams with authentication
   const loadUserTeams = async (userId) => {
-    // API call to fetch teams would happen here
-    // Mock data for now
-    const mockTeams = [
-      { id: 'team1', name: 'Finance Team', memberCount: 3, createdBy: userId },
-      { id: 'team2', name: 'Investment Group', memberCount: 5, createdBy: 'otherUser' }
-    ];
-    setTeams(mockTeams);
+    try {
+      const response = await fetch(`/api/teams?userId=${userId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) throw new Error('Failed to fetch teams');
+      const teamsData = await response.json();
+      setTeams(teamsData);
+    } catch (err) {
+      setError('Failed to load teams');
+      throw err;
+    }
   };
 
-  // Load pending team invitations
+  // Load pending invitations with authentication
   const loadPendingInvitations = async (email) => {
-    // API call to fetch invitations would happen here
-    // Mock data for now
-    const mockInvitations = [
-      { id: 'inv1', teamId: 'team3', teamName: 'New Project', invitedBy: 'user456' }
-    ];
-    setPendingInvitations(mockInvitations);
+    try {
+      const response = await fetch(`/api/invitations?email=${email}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (!response.ok) throw new Error('Failed to fetch invitations');
+      const invitations = await response.json();
+      setPendingInvitations(invitations);
+    } catch (err) {
+      setError('Failed to load invitations');
+      throw err;
+    }
   };
 
   // Create a new team
@@ -204,24 +251,29 @@ export const VaultProvider = ({ children }) => {
 
   // Create a new transaction that requires team approval
   const createTeamTransaction = async (transactionData) => {
+    if (!isLoggedIn || !authUser) {
+      setError('User not authenticated');
+      return null;
+    }
+
     setIsLoading(true);
     try {
-      // API call to create transaction would happen here
-      // transactionData would include type, amount, asset, etc.
+      const response = await fetch('/api/transactions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          ...transactionData,
+          teamId: activeTeam?.id,
+          createdBy: authUser.id
+        })
+      });
+
+      if (!response.ok) throw new Error('Failed to create transaction');
       
-      // Mock response
-      const newTransaction = {
-        id: `tx-${Date.now()}`,
-        type: transactionData.type,
-        amount: transactionData.amount,
-        asset: transactionData.asset,
-        status: 'PENDING_APPROVAL',
-        approvalsNeeded: activeTeam.memberCount, // All members need to approve
-        approvalsReceived: 1, // Creator automatically approves
-        createdBy: authUser.id,
-        createdAt: new Date().toISOString()
-      };
-      
+      const newTransaction = await response.json();
       setPendingTransactions(prev => [...prev, newTransaction]);
       setError(null);
       return newTransaction;
@@ -550,76 +602,46 @@ export const VaultProvider = ({ children }) => {
     }
   };
 
-  const handleMemberApproval = async (teamId, memberId, shardValue) => {
+  // Handle member approval with authentication
+  const handleMemberApproval = async (transactionId, memberId, approved) => {
+    if (!isLoggedIn || !authUser) {
+      setError('User not authenticated');
+      return;
+    }
+
+    setIsLoading(true);
     try {
-      setIsLoading(true);
-      setError(null);
-
-      // Validate inputs
-      if (!teamId || !memberId || !shardValue) {
-        throw new Error('Missing required approval parameters');
-      }
-
-      const response = await fetch('https://2zfmmwd269.execute-api.ap-south-1.amazonaws.com', {
+      const response = await fetch(`/api/transactions/${transactionId}/approve`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          team_id: teamId,
-          shard_id: memberId,
-          shard_value: shardValue
+          memberId,
+          approved
         })
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Failed to approve member');
-      }
-
-      const result = await response.json();
-
-      // Update approval state
+      if (!response.ok) throw new Error('Failed to process approval');
+      
+      const updatedTransaction = await response.json();
+      setPendingTransactions(prev => 
+        prev.map(tx => tx.id === transactionId ? updatedTransaction : tx)
+      );
+      
       setMemberApprovals(prev => ({
         ...prev,
-        [memberId]: {
-          approved: true,
-          timestamp: new Date().toISOString(),
-          teamId
+        [transactionId]: {
+          ...prev[transactionId],
+          [memberId]: approved
         }
       }));
-
-      // Update team member status if needed
-      const updatedTeams = teams.map(team => {
-        if (team.id === teamId) {
-          return {
-            ...team,
-            members: team.members.map(member => {
-              if (member.id === memberId) {
-                return {
-                  ...member,
-                  approved: true,
-                  approvalTimestamp: new Date().toISOString()
-                };
-              }
-              return member;
-            })
-          };
-        }
-        return team;
-      });
-
-      setTeams(updatedTeams);
       
-      // If this was for the active team, update it
-      if (activeTeam && activeTeam.id === teamId) {
-        setActiveTeam(updatedTeams.find(t => t.id === teamId));
-      }
-
-      return result;
-    } catch (error) {
-      setError(error.message || 'Failed to process approval');
-      throw error;
+      setError(null);
+    } catch (err) {
+      setError(err.message || 'Failed to process approval');
+      throw err;
     } finally {
       setIsLoading(false);
     }
@@ -627,7 +649,7 @@ export const VaultProvider = ({ children }) => {
 
   return (
     <VaultContext.Provider value={{ 
-      isAuthenticated: isLoggedIn, // Map from AuthContext
+      isAuthenticated: isLoggedIn,
       isLoading,
       error,
       teams,
@@ -650,6 +672,7 @@ export const VaultProvider = ({ children }) => {
       transferAssets,
       memberApprovals,
       handleMemberApproval,
+      loadUserData, // Expose loadUserData for manual refresh
     }}>
       {children}
     </VaultContext.Provider>
