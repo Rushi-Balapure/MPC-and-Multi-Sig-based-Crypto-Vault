@@ -1,16 +1,34 @@
 // index.js (Backend)
+//next 2 lines added
+import dotenv from 'dotenv';
+dotenv.config();
+
+
+
+//const dynamoDB = require('./utils/awsConfig'); 
 console.log('👋 Server is starting...');
 
 import express from 'express';
 import session from 'express-session';
-import bodyParser from 'body-parser';
-import cors from 'cors';
-import dotenv from 'dotenv';
+//import bodyParser from 'body-parser';
+//import cors from 'cors';
+//import dotenv from 'dotenv';
 import { SESClient, GetSendQuotaCommand, VerifyEmailAddressCommand } from '@aws-sdk/client-ses';
 import jwt from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
 
 dotenv.config();  // Load environment variables from .env file
+//line 18-21 added
+//const express = require('express');
+//const cors = require('cors');
+//const bodyParser = require('body-parser');
+const port = process.env.PORT || 5000;
+import dynamoDB from './utils/awsConfig.js';
+//import express from 'express';
+import cors from 'cors';
+import bodyParser from 'body-parser';
+import teamRoutes from './routes/team.js';
+
 
 // Setup AWS SES client
 const sesClient = new SESClient({
@@ -106,6 +124,24 @@ app.use(session({
         maxAge: 24 * 60 * 60 * 1000 // 24 hours
     }
 }));
+//lines 117-133 added
+app.use(cors());
+app.use(bodyParser.json());
+
+// Import and use the team route
+//const teamRoutes = require('./routes/team'); // 👈 adjust if the path is different
+//app.use('/teams', teamRoutes); // Now all /team/* routes go to this file
+app.use('/api/teams', teamRoutes);
+
+// Root test route (optional)
+app.get('/', (req, res) => {
+  res.send('Server is running');
+});
+
+// Start the server
+/*app.listen(port, () => {
+  console.log(`Server running on port ${port}`);
+});*/
 
 // Test cognito JWT route
 app.get('/api/verify-token', verifyTokenMiddleware, (req, res) => {
