@@ -1,6 +1,5 @@
-//src/context/TeamContext.js
+// src/context/TeamContext.js
 import React, { createContext, useState, useEffect, useContext } from 'react';
-import { getTeamDetails, getTeamTransactions } from '../services/teamApi';
 
 export const TeamContext = createContext();
 
@@ -15,365 +14,420 @@ export const TeamProvider = ({ children }) => {
     error: null
   });
 
-  useEffect(() => {
-    // Check if team data was previously saved
-    const savedTeamData = localStorage.getItem('teamData');
-    if (savedTeamData) {
-      try {
-        const parsedTeamData = JSON.parse(savedTeamData);
+  const API_BASE_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5001';
+
+  // Helper function to get auth token (you'll need to implement this based on your auth system)
+  const getAuthToken = () => {
+    // Replace this with your actual token retrieval method
+    // For now, returning null until you implement session management
+    return localStorage.getItem('authToken') || null;
+  };
+
+  // Helper function to make authenticated requests
+  const makeAuthenticatedRequest = async (url, options = {}) => {
+    const token = getAuthToken();
+    const headers = {
+      'Content-Type': 'application/json',
+      ...options.headers
+    };
+
+    // Add authorization header if token exists
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    return fetch(url, {
+      ...options,
+      headers
+    });
+  };
+
+  const fetchAllTeams = async () => {
+    setTeamState(prev => ({ ...prev, loading: true, error: null }));
+
+    try {
+      // Use the /user endpoint to get only teams the user is part of
+      const response = await makeAuthenticatedRequest(`${API_BASE_URL}/api/teams/user`);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch teams: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      
+      // Ensure we have a teams array, even if empty
+      const fetchedTeams = Array.isArray(data.teams) ? data.teams : [];
+      console.log('✅ Teams fetched successfully:', fetchedTeams);
+
+      let currentTeam = null;
+      if (fetchedTeams.length > 0) {
+        currentTeam = fetchedTeams[0]; // default to first team
+        await fetchTeamTransactions(currentTeam.teamId);
+      }
+
+      setTeamState(prev => ({
+        ...prev,
+        teams: fetchedTeams,
+        currentTeam,
+        loading: false
+      }));
+
+      return fetchedTeams;
+    } catch (error) {
+      console.error('❌ Error fetching teams:', error);
+      setTeamState(prev => ({
+        ...prev,
+        error: error.message || 'Failed to fetch teams',
+        loading: false,
+        teams: [] // Ensure teams is always an array
+      }));
+      return [];
+    }
+  };
+
+  const fetchTeamTransactions = async (teamId) => {
+    if (!teamId) return [];
+    
+    console.log('📋 Fetching transactions for team:', teamId);
+
+    try {
+      // Replace this with actual API call when you implement transaction endpoints
+      const response = await makeAuthenticatedRequest(`${API_BASE_URL}/api/transactions/${teamId}`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        const transactions = Array.isArray(data.transactions) ? data.transactions : [];
+        
+        const pending = transactions.filter(tx => tx.status === 'pending');
+        const completed = transactions.filter(tx => tx.status === 'completed');
+
         setTeamState(prev => ({
           ...prev,
-          teams: parsedTeamData.teams || [],
-          currentTeam: parsedTeamData.currentTeam || null,
+          transactions,
+          pendingTransactions: pending,
+          completedTransactions: completed
         }));
-        
-        // If there's a current team, fetch its transactions
-        if (parsedTeamData.currentTeam) {
-          fetchTeamTransactions(parsedTeamData.currentTeam.id);
-        }
-      } catch (error) {
-        console.error("Failed to parse saved team data", error);
+
+        return transactions;
+      } else {
+        throw new Error('Failed to fetch transactions');
       }
+    } catch (error) {
+      console.warn('⚠️ Transactions API not implemented yet, using mock data:', error.message);
+      
+      // Mock transactions for now - ensure they're always arrays
+      const mockTransactions = [
+        {
+          id: `tx-${teamId}-1`,
+          teamId,
+          amount: 0.5,
+          currency: 'ETH',
+          recipient: '0x742d35Cc6436C0532925a3b8D2439C6B7a4b7320',
+          initiatedBy: { id: 'user1', email: 'user@example.com' },
+          createdAt: new Date(Date.now() - 86400000).toISOString(),
+          status: 'pending',
+          approvals: [{ id: 'user1', email: 'user@example.com' }],
+          requiredApprovals: 2
+        }
+      ];
+
+      const pending = mockTransactions.filter(tx => tx.status === 'pending');
+      const completed = mockTransactions.filter(tx => tx.status === 'completed');
+
+      setTeamState(prev => ({
+        ...prev,
+        transactions: mockTransactions,
+        pendingTransactions: pending,
+        completedTransactions: completed
+      }));
+
+      return mockTransactions;
     }
+  };
+
+  useEffect(() => {
+    fetchAllTeams();
   }, []);
 
   const fetchTeamDetails = async (teamId) => {
-    setTeamState(prev => ({ ...prev, loading: true }));
+    if (!teamId) return null;
+    
+    setTeamState(prev => ({ ...prev, loading: true, error: null }));
+
     try {
-      const teamDetails = await getTeamDetails(teamId);
+      const response = await makeAuthenticatedRequest(`${API_BASE_URL}/api/teams/${teamId}`);
       
+      if (!response.ok) {
+        throw new Error(`Failed to fetch team details: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ Team details fetched:', data.team);
+
       setTeamState(prev => ({
         ...prev,
-        currentTeam: teamDetails,
+        currentTeam: data.team,
         loading: false
       }));
-      
-      // Save to localStorage
-      localStorage.setItem('teamData', JSON.stringify({
-        ...JSON.parse(localStorage.getItem('teamData') || '{}'),
-        currentTeam: teamDetails
-      }));
-      
-      return teamDetails;
+
+      return data.team;
     } catch (error) {
+      console.error('❌ Error fetching team details:', error);
       setTeamState(prev => ({
         ...prev,
-        error: "Failed to fetch team details",
+        error: error.message || 'Failed to fetch team details',
         loading: false
       }));
       return null;
     }
   };
 
-  const fetchTeamTransactions = async (teamId) => {
-    setTeamState(prev => ({ ...prev, loading: true }));
-    try {
-      const transactions = await getTeamTransactions(teamId);
-      
-      // Separate pending and completed transactions
-      const pending = transactions.filter(tx => tx.status === 'pending');
-      const completed = transactions.filter(tx => tx.status === 'completed');
-      
-      setTeamState(prev => ({
-        ...prev,
-        transactions,
-        pendingTransactions: pending,
-        completedTransactions: completed,
-        loading: false
-      }));
-      
-      return transactions;
-    } catch (error) {
-      setTeamState(prev => ({
-        ...prev,
-        error: "Failed to fetch team transactions",
-        loading: false
-      }));
-      return [];
-    }
-  };
-
   const createTeam = async (teamData) => {
-    // This would call your backend API to create the team and distribute key shards
-    setTeamState(prev => ({ ...prev, loading: true }));
-    
+    if (!teamData || !teamData.members) {
+      throw new Error('Invalid team data');
+    }
+
+    setTeamState(prev => ({ ...prev, loading: true, error: null }));
+
     try {
-      // In a real implementation, this would be an API call to your Lambda function
-      // that takes the team members' emails and distributes key shards
-      console.log("Sending to backend API:", {
-        name: teamData.name,
-        quorum: teamData.quorum,
-        creator: teamData.creator,
-        members: teamData.members
+      const emailList = Array.isArray(teamData.members) ? teamData.members.map(m => m.email) : [];
+      
+      // Verify emails first
+      const verifyResponse = await makeAuthenticatedRequest(`${API_BASE_URL}/api/verify-email`, {
+        method: 'POST',
+        body: JSON.stringify({ emails: emailList })
       });
+
+      if (!verifyResponse.ok) {
+        const errorData = await verifyResponse.json();
+        throw new Error(errorData.error || 'Failed to verify emails');
+      }
+
+      // Create team
+      const createResponse = await makeAuthenticatedRequest(`${API_BASE_URL}/api/teams/create`, {
+        method: 'POST',
+        body: JSON.stringify({
+          teamName: teamData.name || teamData.teamName,
+          members: teamData.members
+        })
+      });
+
+      if (!createResponse.ok) {
+        const errorData = await createResponse.json();
+        throw new Error(errorData.error || 'Failed to create team');
+      }
+
+      const result = await createResponse.json();
       
-      // Simulate API call to backend
-      // In a real app, you'd make a fetch/axios call to your AWS Lambda here
-      // const response = await fetch('/api/teams', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(teamData)
-      // });
-      // const data = await response.json();
+      // Refresh teams list to get the latest data
+      await fetchAllTeams();
       
-      // For now, just create a mockup team as if the backend responded
-      const mockTeamResponse = {
-        id: `team-${Date.now()}`,
-        name: teamData.name,
-        createdAt: new Date().toISOString(),
-        creator: teamData.creator,
-        members: [
-          teamData.creator,
-          ...teamData.members.map((member, index) => ({
-            id: `member-${Date.now()}-${index}`,
-            email: member.email,
-            role: member.role
-          }))
-        ],
-        quorum: teamData.quorum,
-        totalMembers: 1 + teamData.members.length
-      };
-      
-      const newTeam = mockTeamResponse;
-      
-      setTeamState(prev => ({
-        ...prev,
-        teams: [...prev.teams, newTeam],
-        currentTeam: newTeam,
-        loading: false
-      }));
-      
-      // Save to localStorage
-      const savedTeamData = JSON.parse(localStorage.getItem('teamData') || '{}');
-      localStorage.setItem('teamData', JSON.stringify({
-        ...savedTeamData,
-        teams: [...(savedTeamData.teams || []), newTeam],
-        currentTeam: newTeam
-      }));
-      
-      return newTeam;
+      setTeamState(prev => ({ ...prev, loading: false }));
+
+      return result;
     } catch (error) {
-      console.error("Failed to create team:", error);
+      console.error('❌ Error creating team:', error);
       setTeamState(prev => ({
         ...prev,
-        error: "Failed to create team: " + (error.message || "Unknown error"),
+        error: error.message || 'Failed to create team',
         loading: false
       }));
       throw error;
     }
   };
 
-  const addTeamMember = (teamId, memberData) => {
-    setTeamState(prev => {
-      const updatedTeams = prev.teams.map(team => {
-        if (team.id === teamId) {
-          return {
-            ...team,
-            members: [...team.members, memberData],
-            totalMembers: team.totalMembers + 1
-          };
-        }
-        return team;
-      });
-      
-      let updatedCurrentTeam = prev.currentTeam;
-      if (prev.currentTeam && prev.currentTeam.id === teamId) {
-        updatedCurrentTeam = {
-          ...prev.currentTeam,
-          members: [...prev.currentTeam.members, memberData],
-          totalMembers: prev.currentTeam.totalMembers + 1
-        };
-      }
-      
-      // Save to localStorage
-      const savedTeamData = JSON.parse(localStorage.getItem('teamData') || '{}');
-      localStorage.setItem('teamData', JSON.stringify({
-        ...savedTeamData,
-        teams: updatedTeams,
-        currentTeam: updatedCurrentTeam
-      }));
-      
-      return {
-        ...prev,
-        teams: updatedTeams,
-        currentTeam: updatedCurrentTeam
-      };
-    });
-  };
-
-  const removeTeamMember = (teamId, memberId) => {
-    setTeamState(prev => {
-      const updatedTeams = prev.teams.map(team => {
-        if (team.id === teamId) {
-          return {
-            ...team,
-            members: team.members.filter(member => member.id !== memberId),
-            totalMembers: team.totalMembers - 1
-          };
-        }
-        return team;
-      });
-      
-      let updatedCurrentTeam = prev.currentTeam;
-      if (prev.currentTeam && prev.currentTeam.id === teamId) {
-        updatedCurrentTeam = {
-          ...prev.currentTeam,
-          members: prev.currentTeam.members.filter(member => member.id !== memberId),
-          totalMembers: prev.currentTeam.totalMembers - 1
-        };
-      }
-      
-      // Save to localStorage
-      const savedTeamData = JSON.parse(localStorage.getItem('teamData') || '{}');
-      localStorage.setItem('teamData', JSON.stringify({
-        ...savedTeamData,
-        teams: updatedTeams,
-        currentTeam: updatedCurrentTeam
-      }));
-      
-      return {
-        ...prev,
-        teams: updatedTeams,
-        currentTeam: updatedCurrentTeam
-      };
-    });
-  };
-
-  const initiateTransaction = (transactionData) => {
-    const newTransaction = {
-      id: `tx-${Date.now()}`,
-      teamId: teamState.currentTeam.id,
-      amount: transactionData.amount,
-      currency: transactionData.currency,
-      recipient: transactionData.recipient,
-      initiatedBy: transactionData.initiatedBy,
-      createdAt: new Date().toISOString(),
-      status: 'pending',
-      approvals: [transactionData.initiatedBy],
-      requiredApprovals: teamState.currentTeam.quorum
-    };
-    
-    setTeamState(prev => ({
-      ...prev,
-      transactions: [newTransaction, ...prev.transactions],
-      pendingTransactions: [newTransaction, ...prev.pendingTransactions]
-    }));
-    
-    // In a real app, you would call an API to save this transaction
-    return newTransaction;
-  };
-
-  const approveTransaction = (transactionId, approverData) => {
-    setTeamState(prev => {
-      const updatedTransactions = prev.transactions.map(tx => {
-        if (tx.id === transactionId) {
-          // Check if this approver hasn't already approved
-          if (!tx.approvals.some(approver => approver.id === approverData.id)) {
-            const updatedApprovals = [...tx.approvals, approverData];
-            const isCompleted = updatedApprovals.length >= tx.requiredApprovals;
-            
-            return {
-              ...tx,
-              approvals: updatedApprovals,
-              status: isCompleted ? 'completed' : 'pending'
-            };
-          }
-        }
-        return tx;
-      });
-      
-      // Recategorize pending and completed
-      const pending = updatedTransactions.filter(tx => tx.status === 'pending');
-      const completed = updatedTransactions.filter(tx => tx.status === 'completed');
-      
-      return {
-        ...prev,
-        transactions: updatedTransactions,
-        pendingTransactions: pending,
-        completedTransactions: completed
-      };
-    });
-  };
-  
-  const switchTeam = (teamId) => {
-    const team = teamState.teams.find(t => t.id === teamId);
+  const switchTeam = async (teamId) => {
+    const teams = teamState.teams || [];
+    const team = teams.find(t => t.teamId === teamId);
     if (team) {
       setTeamState(prev => ({
         ...prev,
-        currentTeam: team
+        currentTeam: team,
+        transactions: [],
+        pendingTransactions: [],
+        completedTransactions: []
       }));
-      
-      // Save to localStorage
-      localStorage.setItem('teamData', JSON.stringify({
-        ...JSON.parse(localStorage.getItem('teamData') || '{}'),
-        currentTeam: team
+      await fetchTeamTransactions(teamId);
+    }
+  };
+
+  const addTeamMember = async (teamId, memberData) => {
+    if (!teamId || !memberData) return;
+    
+    try {
+      // Make API call to add member
+      const response = await makeAuthenticatedRequest(`${API_BASE_URL}/api/teams/${teamId}/members`, {
+        method: 'POST',
+        body: JSON.stringify(memberData)
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to add team member');
+      }
+
+      // Refresh teams data
+      await fetchAllTeams();
+    } catch (error) {
+      console.error('❌ Error adding team member:', error);
+      setTeamState(prev => ({
+        ...prev,
+        error: error.message || 'Failed to add team member'
       }));
+      throw error;
+    }
+  };
+
+  const removeTeamMember = async (teamId, memberId) => {
+    if (!teamId || !memberId) return;
+    
+    try {
+      // Make API call to remove member
+      const response = await makeAuthenticatedRequest(`${API_BASE_URL}/api/teams/${teamId}/members/${memberId}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to remove team member');
+      }
+
+      // Refresh teams data
+      await fetchAllTeams();
+    } catch (error) {
+      console.error('❌ Error removing team member:', error);
+      setTeamState(prev => ({
+        ...prev,
+        error: error.message || 'Failed to remove team member'
+      }));
+      throw error;
+    }
+  };
+
+  const initiateTransaction = async (transactionData) => {
+    if (!transactionData || !teamState.currentTeam) return null;
+    
+    try {
+      const response = await makeAuthenticatedRequest(`${API_BASE_URL}/api/transactions/initiate`, {
+        method: 'POST',
+        body: JSON.stringify({
+          ...transactionData,
+          teamId: teamState.currentTeam.teamId
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to initiate transaction');
+      }
+
+      const result = await response.json();
       
-      // Fetch transactions for the new team
-      fetchTeamTransactions(teamId);
+      // Refresh transactions
+      await fetchTeamTransactions(teamState.currentTeam.teamId);
+      
+      return result;
+    } catch (error) {
+      console.error('❌ Error initiating transaction:', error);
+      setTeamState(prev => ({
+        ...prev,
+        error: error.message || 'Failed to initiate transaction'
+      }));
+      throw error;
+    }
+  };
+
+  const approveTransaction = async (transactionId, approverData) => {
+    if (!transactionId || !approverData) return;
+    
+    try {
+      const response = await makeAuthenticatedRequest(`${API_BASE_URL}/api/transactions/${transactionId}/approve`, {
+        method: 'POST',
+        body: JSON.stringify(approverData)
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to approve transaction');
+      }
+
+      // Refresh transactions
+      if (teamState.currentTeam) {
+        await fetchTeamTransactions(teamState.currentTeam.teamId);
+      }
+    } catch (error) {
+      console.error('❌ Error approving transaction:', error);
+      setTeamState(prev => ({
+        ...prev,
+        error: error.message || 'Failed to approve transaction'
+      }));
+      throw error;
     }
   };
 
   const deleteTeam = async (teamId) => {
-    // In a real app, this would require verification from all team members
-    setTeamState(prev => ({ ...prev, loading: true }));
+    if (!teamId) return false;
     
+    setTeamState(prev => ({ ...prev, loading: true, error: null }));
+
     try {
-      // Mock API call to delete team
-      // await fetch(`/api/teams/${teamId}`, { method: 'DELETE' });
-      
-      // Remove team from state
-      const updatedTeams = teamState.teams.filter(team => team.id !== teamId);
-      let updatedCurrentTeam = teamState.currentTeam;
-      
-      // If we're deleting the current team, set current to null or the first available team
-      if (teamState.currentTeam && teamState.currentTeam.id === teamId) {
-        updatedCurrentTeam = updatedTeams.length > 0 ? updatedTeams[0] : null;
+      const response = await makeAuthenticatedRequest(`${API_BASE_URL}/api/teams/${teamId}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete team');
       }
+
+      // Refresh teams list
+      await fetchAllTeams();
       
-      setTeamState(prev => ({
-        ...prev,
-        teams: updatedTeams,
-        currentTeam: updatedCurrentTeam,
-        loading: false
-      }));
-      
-      // Update localStorage
-      localStorage.setItem('teamData', JSON.stringify({
-        teams: updatedTeams,
-        currentTeam: updatedCurrentTeam
-      }));
-      
+      setTeamState(prev => ({ ...prev, loading: false }));
       return true;
     } catch (error) {
+      console.error('❌ Error deleting team:', error);
       setTeamState(prev => ({
         ...prev,
-        error: "Failed to delete team",
+        error: error.message || 'Failed to delete team',
         loading: false
       }));
       throw error;
     }
   };
 
+  const clearError = () => {
+    setTeamState(prev => ({ ...prev, error: null }));
+  };
+
+  const refreshTeams = () => {
+    fetchAllTeams();
+  };
+
   return (
-    <TeamContext.Provider value={{
-      teamState,
-      fetchTeamDetails,
-      fetchTeamTransactions,
-      createTeam,
-      addTeamMember,
-      removeTeamMember,
-      initiateTransaction,
-      approveTransaction,
-      switchTeam,
-      deleteTeam
-    }}>
+    <TeamContext.Provider
+      value={{
+        teamState,
+        fetchTeamDetails,
+        fetchTeamTransactions,
+        fetchAllTeams,
+        createTeam,
+        addTeamMember,
+        removeTeamMember,
+        initiateTransaction,
+        approveTransaction,
+        switchTeam,
+        deleteTeam,
+        clearError,
+        refreshTeams
+      }}
+    >
       {children}
     </TeamContext.Provider>
   );
 };
 
-// Custom hook to use the team context
-export const useTeam = () => useContext(TeamContext);
+export const useTeam = () => {
+  const context = useContext(TeamContext);
+  if (!context) {
+    throw new Error('useTeam must be used within a TeamProvider');
+  }
+  return context;
+};
 
 export default TeamProvider;

@@ -1,34 +1,20 @@
-// index.js (Backend)
-//next 2 lines added
+// backend/index.js 
 import dotenv from 'dotenv';
 dotenv.config();
 
-
-
-//const dynamoDB = require('./utils/awsConfig'); 
 console.log('👋 Server is starting...');
 
 import express from 'express';
 import session from 'express-session';
-//import bodyParser from 'body-parser';
-//import cors from 'cors';
-//import dotenv from 'dotenv';
 import { SESClient, GetSendQuotaCommand, VerifyEmailAddressCommand } from '@aws-sdk/client-ses';
 import jwt from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
-
-dotenv.config();  // Load environment variables from .env file
-//line 18-21 added
-//const express = require('express');
-//const cors = require('cors');
-//const bodyParser = require('body-parser');
-const port = process.env.PORT || 5000;
 import dynamoDB from './utils/awsConfig.js';
-//import express from 'express';
 import cors from 'cors';
 import bodyParser from 'body-parser';
 import teamRoutes from './routes/team.js';
 
+const port = process.env.PORT || 5000;
 
 // Setup AWS SES client
 const sesClient = new SESClient({
@@ -98,19 +84,21 @@ const verifyTokenMiddleware = (req, res, next) => {
     });
 };
 
-// 1) Configure CORS
+// Configure CORS - Single configuration
 const corsOptions = {
     origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-    methods: ['GET', 'POST', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true
 };
+
+// Apply CORS middleware
 app.use(cors(corsOptions));
 
-// 2) Explicitly handle preflight for every path
-app.options('/*', cors(corsOptions));
+// Handle preflight requests for all routes
+app.options('*', cors(corsOptions));
 
-// 3) Body parser middleware
+// Body parser middleware
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
@@ -120,28 +108,31 @@ app.use(session({
     resave: false,
     saveUninitialized: true,
     cookie: { 
-        secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
+        secure: process.env.NODE_ENV === 'production',
         maxAge: 24 * 60 * 60 * 1000 // 24 hours
     }
 }));
-//lines 117-133 added
-app.use(cors());
-app.use(bodyParser.json());
 
-// Import and use the team route
-//const teamRoutes = require('./routes/team'); // 👈 adjust if the path is different
-//app.use('/teams', teamRoutes); // Now all /team/* routes go to this file
-app.use('/api/teams', teamRoutes);
-
-// Root test route (optional)
-app.get('/', (req, res) => {
-  res.send('Server is running');
+// Add request logging middleware for debugging
+app.use((req, res, next) => {
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+    if (req.method === 'POST') {
+        console.log('Request body:', req.body);
+    }
+    next();
 });
 
-// Start the server
-/*app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-});*/
+// Use team routes
+app.use('/api/teams', teamRoutes);
+
+// Root test route
+app.get('/', (req, res) => {
+    res.json({ 
+        message: 'CryptoVault Backend Server is running',
+        status: 'OK',
+        timestamp: new Date().toISOString()
+    });
+});
 
 // Test cognito JWT route
 app.get('/api/verify-token', verifyTokenMiddleware, (req, res) => {
@@ -151,25 +142,51 @@ app.get('/api/verify-token', verifyTokenMiddleware, (req, res) => {
     });
 });
 
-// Endpoint to verify email
+// Endpoint to verify email with SES
 app.post('/api/verify-email', async (req, res) => {
     const { emails } = req.body;
 
-    console.log('Emails received from frontend:', emails);
+    console.log('📧 Emails received for verification:', emails);
+
+    // Validate request
+    if (!emails || !Array.isArray(emails) || emails.length === 0) {
+        return res.status(400).json({ 
+            error: 'Emails array is required and must not be empty' 
+        });
+    }
 
     try {
         const results = [];
+        
         for (const email of emails) {
+            // Basic email validation
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+                console.log(`❌ Invalid email format: ${email}`);
+                return res.status(400).json({ 
+                    error: `Invalid email format: ${email}` 
+                });
+            }
+
+            console.log(`📧 Verifying email: ${email}`);
             const params = { EmailAddress: email };
             const command = new VerifyEmailAddressCommand(params);
             const result = await sesClient.send(command);
-            results.push({ email, result });
+            results.push({ email, result, status: 'verification_sent' });
         }
 
-        res.status(200).send({ message: 'Verification emails sent', results });
+        console.log('✅ All emails verified successfully');
+        res.status(200).json({ 
+            message: 'Verification emails sent successfully', 
+            results 
+        });
+        
     } catch (error) {
-        console.error('Error verifying emails:', error);
-        res.status(500).send({ error: error.message });
+        console.error('❌ Error verifying emails:', error);
+        res.status(500).json({ 
+            error: 'Failed to verify emails',
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 });
 
@@ -179,7 +196,6 @@ app.get('/api/secure-data', verifyTokenMiddleware, (req, res) => {
         message: 'This is secured data',
         user: req.user,
         data: {
-            // Your secure data here
             vaultInfo: "This is your crypto vault information",
             timestamp: new Date().toISOString()
         }
@@ -188,12 +204,44 @@ app.get('/api/secure-data', verifyTokenMiddleware, (req, res) => {
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-    res.status(200).json({ status: 'OK', message: 'Server is running' });
+    res.status(200).json({ 
+        status: 'OK', 
+        message: 'CryptoVault Backend Server is healthy',
+        timestamp: new Date().toISOString(),
+        environment: process.env.NODE_ENV || 'development'
+    });
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+    console.error('❌ Unhandled error:', err);
+    res.status(500).json({ 
+        error: 'Internal server error',
+        details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+});
+
+// Handle 404 routes
+app.use('*', (req, res) => {
+    res.status(404).json({ 
+        error: 'Route not found',
+        path: req.originalUrl,
+        method: req.method
+    });
 });
 
 // Start the server
 const PORT = process.env.PORT || 5001;
 app.listen(PORT, async () => {
-    console.log(`🚀 Backend server is running on [http://localhost:${PORT}]`);
+    console.log(`🚀 CryptoVault Backend server is running on http://localhost:${PORT}`);
+    console.log(`📁 Available routes:`);
+    console.log(`   GET  /api/health - Health check`);
+    console.log(`   POST /api/verify-email - Email verification`);
+    console.log(`   POST /api/teams/create - Create team`);
+    console.log(`   GET  /api/teams/list - List all teams`);
+    console.log(`   GET  /api/teams/:teamId - Get specific team`);
+    console.log(`   GET  /api/verify-token - Verify JWT token`);
+    console.log(`   GET  /api/secure-data - Protected route`);
+    
     await testSESConnection(); // Run SES connection test on startup
 });

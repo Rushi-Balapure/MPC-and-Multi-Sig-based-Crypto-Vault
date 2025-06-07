@@ -1,57 +1,89 @@
 // src/pages/TeamManagement.js
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useVault } from '../context/VaultContext';
+import { useTeam } from '../context/TeamContext';
 import TeamMembersList from '../components/team/TeamMembersList';
 import TransactionHistory from '../components/team/TransactionHistory';
 
 const TeamManagement = () => {
   const {
-    activeTeam,
-    pendingTransactions,
-    transactionHistory,
-    selectTeam,
-    teams,
+    teamState: {
+      teams,
+      currentTeam,
+      transactions,
+      pendingTransactions,
+      completedTransactions,
+      loading,
+      error
+    },
+    switchTeam,
     deleteTeam,
-    isLoading
-  } = useVault();
+    fetchTeamDetails,
+    fetchTeamTransactions,
+    clearError
+  } = useTeam();
 
   const [activeTab, setActiveTab] = useState('members');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const navigate = useNavigate();
 
+  // Clear any existing errors when component mounts
   useEffect(() => {
-    // If no active team but teams exist, select the first one
-    if (!activeTeam && teams.length > 0) {
-      selectTeam(teams[0].id);
+    if (error) {
+      clearError();
     }
-  }, [activeTeam, teams, selectTeam]);
+  }, []);
+
+  // Auto-select first team if no current team is selected
+  useEffect(() => {
+    if (!currentTeam && teams.length > 0) {
+      switchTeam(teams[0].teamId);
+    }
+  }, [currentTeam, teams, switchTeam]);
 
   const handleTeamSelect = (teamId) => {
-    selectTeam(teamId);
+    switchTeam(teamId);
   };
 
   const navigateToCreateTeam = () => {
-    // Navigate to your CreateTeam component - update this path to match your actual routing
-    navigate('/team/create'); // Update this path to match your routing configuration
+    navigate('/team/create');
   };
 
   const handleDeleteTeam = async () => {
+    if (!currentTeam) return;
+    
     try {
-      const result = await deleteTeam(activeTeam.id);
-      if (result) {
-        setShowDeleteConfirm(false);
-        // Will automatically select another team from the useEffect
-      } else {
-        setDeleteError('Team deletion failed. All members must consent and team vault must be empty.');
-      }
+      setDeleteError('');
+      await deleteTeam(currentTeam.teamId);
+      setShowDeleteConfirm(false);
+      // TeamContext will automatically refresh the teams list
     } catch (err) {
-      setDeleteError(err.message || 'Failed to delete team');
+      setDeleteError(err.message || 'Team deletion failed. All members must consent and team vault must be empty.');
     }
   };
 
-  if (isLoading) {
+  const handleInitiateKey = async () => {
+    try {
+      // You can replace this with a proper TeamContext method when ready
+      const response = await fetch('https://2u7u5x01ek.execute-api.ap-south-1.amazonaws.com/test/', {
+        method: 'GET'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Key initiation response:', data);
+        alert('Key initiation successful!');
+      } else {
+        alert('Key initiation failed. Status: ' + response.status);
+      }
+    } catch (error) {
+      console.error('Error initiating key:', error);
+      alert('An error occurred while initiating the key.');
+    }
+  };
+
+  if (loading) {
     return (
       <div className="flex flex-col items-center justify-center h-64">
         <p className="text-white">Loading team information...</p>
@@ -61,6 +93,13 @@ const TeamManagement = () => {
 
   return (
     <div className="container mx-auto px-4 py-8">
+      {/* Error Display */}
+      {error && (
+        <div className="bg-red-900/50 border border-red-500 text-red-300 px-4 py-3 rounded mb-6">
+          {error}
+        </div>
+      )}
+
       {/* Team List Section */}
       <div className="mb-8">
         <div className="flex justify-between items-center mb-4">
@@ -77,21 +116,23 @@ const TeamManagement = () => {
         </div>
 
         {/* Team List */}
-        {teams.length > 0 ? (
+        {teams && teams.length > 0 ? (
           <div className="bg-gray-800 rounded-lg overflow-hidden">
             <ul className="divide-y divide-gray-700">
               {teams.map(team => (
                 <li
-                  key={team.id}
-                  className={`px-4 py-3 cursor-pointer ${activeTeam && activeTeam.id === team.id ? 'bg-gray-700' : 'hover:bg-gray-700/50'}`}
-                  onClick={() => handleTeamSelect(team.id)}
+                  key={team.teamId}
+                  className={`px-4 py-3 cursor-pointer ${currentTeam && currentTeam.teamId === team.teamId ? 'bg-gray-700' : 'hover:bg-gray-700/50'}`}
+                  onClick={() => handleTeamSelect(team.teamId)}
                 >
                   <div className="flex justify-between items-center">
                     <div>
-                      <h3 className="text-lg font-medium text-white">{team.name}</h3>
-                      <p className="text-gray-400 text-sm">{team.memberCount || 0} members</p>
+                      <h3 className="text-lg font-medium text-white">{team.teamName || team.name}</h3>
+                      <p className="text-gray-400 text-sm">
+                        {team.members ? team.members.length : (team.memberCount || 0)} members
+                      </p>
                     </div>
-                    {activeTeam && activeTeam.id === team.id && (
+                    {currentTeam && currentTeam.teamId === team.teamId && (
                       <span className="bg-yellow-500/20 text-yellow-400 text-xs px-2 py-1 rounded-full">
                         Active
                       </span>
@@ -115,36 +156,17 @@ const TeamManagement = () => {
       </div>
 
       {/* Team Details Section */}
-      {activeTeam && (
+      {currentTeam && (
         <div className="mt-8">
           <div className="flex justify-between items-center mb-6">
             <div>
-              <h2 className="text-xl font-bold text-white">{activeTeam.name} Details</h2>
-              <p className="text-gray-400">Team ID: {activeTeam.id}</p>
+              <h2 className="text-xl font-bold text-white">{currentTeam.teamName || currentTeam.name} Details</h2>
+              <p className="text-gray-400">Team ID: {currentTeam.teamId}</p>
             </div>
             <div className="flex gap-4">
               <button
                 className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md"
-                onClick={async () => {
-                  try {
-                    const response = await fetch('https://2u7u5x01ek.execute-api.ap-south-1.amazonaws.com/test/', {
-                      method: 'GET'
-                    });
-
-                    if (response.ok) {
-                      const data = await response.json();
-                      console.log('API Response:', data);
-                      alert('GET request successful!');
-                    } else {
-                      alert('GET request failed. Status: ' + response.status);
-                    }
-                  } catch (error) {
-                    console.error('Error fetching data:', error);
-                    alert('An error occurred while making the request.');
-                  }
-
-
-                }}
+                onClick={handleInitiateKey}
               >
                 Initiate Key
               </button>
@@ -164,21 +186,21 @@ const TeamManagement = () => {
                   }`}
                 onClick={() => setActiveTab('members')}
               >
-                Members ({activeTeam.memberCount || 0})
+                Members ({currentTeam.members ? currentTeam.members.length : (currentTeam.memberCount || 0)})
               </button>
               <button
                 className={`py-3 px-6 focus:outline-none ${activeTab === 'pending' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-700 hover:text-white'
                   }`}
                 onClick={() => setActiveTab('pending')}
               >
-                Pending Transactions ({pendingTransactions.length})
+                Pending Transactions ({pendingTransactions ? pendingTransactions.length : 0})
               </button>
               <button
                 className={`py-3 px-6 focus:outline-none ${activeTab === 'completed' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-700 hover:text-white'
                   }`}
                 onClick={() => setActiveTab('completed')}
               >
-                Completed Transactions ({transactionHistory.length})
+                Completed Transactions ({completedTransactions ? completedTransactions.length : 0})
               </button>
               <button
                 className={`py-3 px-6 focus:outline-none ml-auto text-red-400 hover:bg-red-900/30 hover:text-red-300`}
@@ -190,25 +212,25 @@ const TeamManagement = () => {
             <div className="p-6">
               {activeTab === 'members' && (
                 <TeamMembersList
-                  teamId={activeTeam.id}
-                  members={activeTeam.members || []}
-                  memberCount={activeTeam.memberCount || 0}
-                  createdBy={activeTeam.createdBy}
+                  teamId={currentTeam.teamId}
+                  members={currentTeam.members || []}
+                  memberCount={currentTeam.members ? currentTeam.members.length : (currentTeam.memberCount || 0)}
+                  createdBy={currentTeam.createdBy}
                 />
               )}
 
               {activeTab === 'pending' && (
                 <TransactionHistory
-                  transactions={pendingTransactions}
-                  teamId={activeTeam.id}
+                  transactions={pendingTransactions || []}
+                  teamId={currentTeam.teamId}
                   status="pending"
                 />
               )}
 
               {activeTab === 'completed' && (
                 <TransactionHistory
-                  transactions={transactionHistory}
-                  teamId={activeTeam.id}
+                  transactions={completedTransactions || []}
+                  teamId={currentTeam.teamId}
                   status="completed"
                 />
               )}
@@ -235,15 +257,19 @@ const TeamManagement = () => {
             <div className="flex justify-end space-x-4">
               <button
                 className="px-4 py-2 bg-gray-700 text-white rounded-md hover:bg-gray-600"
-                onClick={() => setShowDeleteConfirm(false)}
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  setDeleteError('');
+                }}
               >
                 Cancel
               </button>
               <button
                 className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
                 onClick={handleDeleteTeam}
+                disabled={loading}
               >
-                Delete Team
+                {loading ? 'Deleting...' : 'Delete Team'}
               </button>
             </div>
           </div>

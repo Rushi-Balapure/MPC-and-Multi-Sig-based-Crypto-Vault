@@ -57,13 +57,13 @@ const AppRoutes = () => (
 function App() {
   return (
     <AuthProvider>
-      <VaultProvider>
-        <TeamProvider>
+      <TeamProvider>
+        <VaultProvider>
           <Router>
             <AppRoutes />
           </Router>
-        </TeamProvider>
-      </VaultProvider>
+        </VaultProvider>
+      </TeamProvider>
     </AuthProvider>
   );
 }
