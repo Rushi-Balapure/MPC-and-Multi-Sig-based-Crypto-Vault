@@ -2,7 +2,6 @@
 import express from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import dynamoDB from '../utils/awsConfig.js';
-import verifyTokenMiddleware from '../middleware/verifyToken.js';
 
 const router = express.Router();
 

@@ -1,6 +1,5 @@
 // backend/index.js 
 import dotenv from 'dotenv';
-import verifyTokenMiddleware from './middleware/verifyToken.js';
 dotenv.config();
 
 console.log('👋 Server is starting...');
@@ -60,30 +59,30 @@ function getKey(header, callback) {
 }
 
 // JWT verification middleware
-// const verifyTokenMiddleware = (req, res, next) => {
-//     const authHeader = req.headers.authorization;
-//     if (!authHeader) {
-//         return res.status(401).json({ message: 'Missing Authorization header' });
-//     }
+const verifyTokenMiddleware = (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+        return res.status(401).json({ message: 'Missing Authorization header' });
+    }
 
-//     const token = authHeader.split(' ')[1];
-//     if (!token) {
-//         return res.status(401).json({ message: 'Missing token' });
-//     }
+    const token = authHeader.split(' ')[1];
+    if (!token) {
+        return res.status(401).json({ message: 'Missing token' });
+    }
 
-//     jwt.verify(token, getKey, {
-//         algorithms: ['RS256'],
-//         issuer: `https://cognito-idp.${COGNITO_REGION}.amazonaws.com/${COGNITO_USER_POOL_ID}`
-//     }, (err, decoded) => {
-//         if (err) {
-//             console.error('Token verification error:', err);
-//             return res.status(401).json({ message: 'Unauthorized', error: err.message });
-//         }
+    jwt.verify(token, getKey, {
+        algorithms: ['RS256'],
+        issuer: `https://cognito-idp.${COGNITO_REGION}.amazonaws.com/${COGNITO_USER_POOL_ID}`
+    }, (err, decoded) => {
+        if (err) {
+            console.error('Token verification error:', err);
+            return res.status(401).json({ message: 'Unauthorized', error: err.message });
+        }
         
-//         req.user = decoded;
-//         next();
-//     });
-// };
+        req.user = decoded;
+        next();
+    });
+};
 
 // Configure CORS - Single configuration
 const corsOptions = {
