@@ -1,34 +1,43 @@
 // src/context/VaultContext.js
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { fetchUserAssets, fetchTeamAssets } from '../services/api'; // Assuming these exist
-import { useAuthContext } from './AuthContext'; // Import AuthContext
+import { useAuthContext } from './AuthContext';
+import { useTeam } from './TeamContext';
 
 // Create a context for the Vault
 const VaultContext = createContext();
 
 export const VaultProvider = ({ children }) => {
-  const { token, user: authUser, isLoggedIn, checkAndRefreshSession } = useAuthContext(); // Use AuthContext
+  const { token, user: authUser, isLoggedIn, checkAndRefreshSession } = useAuthContext();
+  
+  // Get team data from TeamContext to avoid duplication
+  const { 
+    teamState, 
+    fetchAllTeams, 
+    createTeam: createTeamInContext,
+    switchTeam,
+    addTeamMember: addTeamMemberInContext,
+    removeTeamMember: removeTeamMemberInContext,
+    deleteTeam: deleteTeamInContext,
+    fetchTeamDetails,
+    initiateTransaction,
+    approveTransaction,
+    clearError: clearTeamError,
+    refreshTeams
+  } = useTeam();
 
-  // Personal assets owned by the user
+  const API_BASE_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5001';
+
+  // Personal assets owned by the user - initialize as empty array
   const [personalAssets, setPersonalAssets] = useState([]);
   
-  // Teams the user is a part of (with more detailed structure)
-  const [teams, setTeams] = useState([]);
-  
-  // Currently selected team for operations
-  const [activeTeam, setActiveTeam] = useState(null);
-  
-  // Current team's assets if a team is selected
+  // Current team's assets if a team is selected - initialize as empty array
   const [teamAssets, setTeamAssets] = useState([]);
   
-  // Pending team invitations
+  // Pending team invitations - initialize as empty array
   const [pendingInvitations, setPendingInvitations] = useState([]);
   
-  // Transaction history
+  // Transaction history - initialize as empty array
   const [transactionHistory, setTransactionHistory] = useState([]);
-  
-  // Pending transactions that need approval from team members
-  const [pendingTransactions, setPendingTransactions] = useState([]);
 
   // Loading states for async operations
   const [isLoading, setIsLoading] = useState(false);
@@ -42,11 +51,20 @@ export const VaultProvider = ({ children }) => {
     if (isLoggedIn && authUser) {
       loadUserData(authUser.id);
     } else {
-      // Clear vault data when logged out
       resetVaultData();
     }
   }, [isLoggedIn, authUser]);
 
+  //Conflict Comment - Modified by Sameer
+  // Effect to load team assets when active team changes
+//   useEffect(() => {
+//     if (teamState?.currentTeam?.teamId) {
+//       loadTeamAssets(teamState.currentTeam.teamId);
+//     }
+//   }, [teamState?.currentTeam]);
+
+  // Load user data including assets and invitations
+  
   // Effect to handle session expiry
   useEffect(() => {
     const handleVisibilityChange = async () => {
@@ -76,11 +94,15 @@ export const VaultProvider = ({ children }) => {
     try {
       await Promise.all([
         loadPersonalAssets(userId),
-        loadUserTeams(userId),
-        loadPendingInvitations(authUser.email)
+        loadPendingInvitations(authUser?.email || '')
       ]);
+      
+      // Refresh teams data from TeamContext
+      await fetchAllTeams();
+      
       setError(null);
     } catch (err) {
+      console.error('❌ Error loading user data:', err);
       setError('Failed to load user data');
       // If error is due to invalid token, try to refresh session
       if (err.message.includes('token') || err.message.includes('unauthorized')) {
@@ -97,12 +119,13 @@ export const VaultProvider = ({ children }) => {
 
   // Reset vault data on logout or session expiry
   const resetVaultData = () => {
-    setTeams([]);
     setPersonalAssets([]);
-    setActiveTeam(null);
     setTeamAssets([]);
     setPendingInvitations([]);
     setTransactionHistory([]);
+    
+     // Load personal assets from API
+
     setPendingTransactions([]);
     setMemberApprovals({});
     setError(null);
@@ -110,14 +133,64 @@ export const VaultProvider = ({ children }) => {
 
   // Load personal assets with authentication
   const loadPersonalAssets = async (userId) => {
+    if (!userId) return;
+    
     try {
-      const assets = await fetchUserAssets(userId, token);
-      setPersonalAssets(assets);
+      const response = await fetch(`${API_BASE_URL}/api/users/${userId}/assets`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setPersonalAssets(Array.isArray(data.assets) ? data.assets : []);
+      } else {
+        // Fallback to mock data if endpoint doesn't exist yet
+        console.log('⚠️ Personal assets endpoint not ready, using mock data');
+        setPersonalAssets([
+          { symbol: 'BTC', amount: 0.025, value: 750, lastUpdated: new Date().toISOString() },
+          { symbol: 'ETH', amount: 1.5, value: 2400, lastUpdated: new Date().toISOString() }
+        ]);
+      }
     } catch (err) {
+      console.error('❌ Error loading personal assets:', err);
       setError('Failed to load personal assets');
-      throw err;
+      setPersonalAssets([]); // Ensure it's always an array
     }
   };
+  
+// Conflict Comment - Modified by Sameer
+//   // Load pending team invitations from API
+//   const loadPendingInvitations = async (email) => {
+//     if (!email) return;
+    
+//     try {
+//       const response = await fetch(`${API_BASE_URL}/api/invitations/${email}`, {
+//         headers: {
+//           'Authorization': `Bearer ${token}`,
+//           'Content-Type': 'application/json'
+//         }
+//       });
+
+//       if (response.ok) {
+//         const data = await response.json();
+//         setPendingInvitations(Array.isArray(data.invitations) ? data.invitations : []);
+//       } else {
+//         // Fallback to mock data if endpoint doesn't exist yet
+//         console.log('⚠️ Invitations endpoint not ready, using mock data');
+//         setPendingInvitations([
+//           { id: 'inv1', teamId: 'team3', teamName: 'New Project', invitedBy: 'user456' }
+//         ]);
+//       }
+//     } catch (err) {
+//       console.error('❌ Error loading invitations:', err);
+//       setError('Failed to load invitations');
+//       setPendingInvitations([]); // Ensure it's always an array
+//       throw err;
+//     }
+//   };
 
   // Load teams with authentication
   const loadUserTeams = async (userId) => {
@@ -153,96 +226,90 @@ export const VaultProvider = ({ children }) => {
     }
   };
 
-  // Create a new team
+  // Use TeamContext's createTeam function
   const createTeam = async (teamData) => {
-    setIsLoading(true);
     try {
-      // API call to create team would happen here
-      // teamData would include name, members, etc.
-      
-      // Mock response
-      const newTeam = {
-        id: `team-${Date.now()}`,
-        name: teamData.name,
-        memberCount: teamData.members.length,
-        createdBy: authUser.id,
-        members: teamData.members,
-        createdAt: new Date().toISOString()
-      };
-      
-      setTeams(prevTeams => [...prevTeams, newTeam]);
-      setActiveTeam(newTeam);
-      setError(null);
-      return newTeam;
+      const result = await createTeamInContext(teamData);
+      return result;
     } catch (err) {
       setError(err.message || 'Failed to create team');
       return null;
-    } finally {
-      setIsLoading(false);
     }
   };
 
-  // Select a team to view/manage
+  // Select a team to view/manage (use TeamContext's switchTeam)
   const selectTeam = async (teamId) => {
-    const team = teams.find(t => t.id === teamId);
-    if (team) {
-      setActiveTeam(team);
+    try {
+      await switchTeam(teamId);
       await loadTeamAssets(teamId);
-      await loadTeamTransactions(teamId);
+    } catch (err) {
+      setError('Failed to select team');
     }
   };
 
   // Load assets for a specific team
   const loadTeamAssets = async (teamId) => {
-    try {
-      const assets = await fetchTeamAssets(teamId);
-      setTeamAssets(assets);
-    } catch (err) {
-      setError('Failed to load team assets');
-    }
-  };
-
-  // Load transaction history for a team
-  const loadTeamTransactions = async (teamId) => {
-    // API call would happen here
-    // Mock data for now
-    const mockTransactions = [
-      { id: 'tx1', type: 'SEND', amount: '0.5', asset: 'ETH', status: 'COMPLETED', timestamp: '2023-05-10T10:30:00Z' },
-      { id: 'tx2', type: 'RECEIVE', amount: '1200', asset: 'USDC', status: 'COMPLETED', timestamp: '2023-05-08T14:22:00Z' }
-    ];
-    setTransactionHistory(mockTransactions);
+    if (!teamId) return;
     
-    const mockPending = [
-      { id: 'ptx1', type: 'SEND', amount: '2.3', asset: 'ETH', status: 'PENDING_APPROVAL', approvalsNeeded: 2, approvalsReceived: 1 }
-    ];
-    setPendingTransactions(mockPending);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/teams/${teamId}/assets`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setTeamAssets(Array.isArray(data.assets) ? data.assets : []);
+      } else {
+        // Fallback to mock data if endpoint doesn't exist yet
+        console.log('⚠️ Team assets endpoint not ready, using mock data');
+        setTeamAssets([
+          { symbol: 'ETH', amount: 5.0, value: 8000, lastUpdated: new Date().toISOString() },
+          { symbol: 'USDC', amount: 10000, value: 10000, lastUpdated: new Date().toISOString() }
+        ]);
+      }
+    } catch (err) {
+      console.error('❌ Error loading team assets:', err);
+      setError('Failed to load team assets');
+      setTeamAssets([]); // Ensure it's always an array
+    }
   };
 
   // Respond to a team invitation
   const respondToInvitation = async (invitationId, accept) => {
     setIsLoading(true);
     try {
-      // API call to accept/reject invitation would happen here
-      
-      if (accept) {
-        // Mock accepting an invitation
-        const invitation = pendingInvitations.find(inv => inv.id === invitationId);
-        const newTeam = {
-          id: invitation.teamId,
-          name: invitation.teamName,
-          memberCount: 2, // example
-          createdBy: invitation.invitedBy
-        };
-        setTeams(prevTeams => [...prevTeams, newTeam]);
+      const response = await fetch(`${API_BASE_URL}/api/invitations/${invitationId}/respond`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ accept })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        
+        if (accept) {
+          // Refresh teams list to include newly joined team
+          await fetchAllTeams();
+        }
+        
+        // Remove invitation from pending list
+        setPendingInvitations(prevInvitations => 
+          (prevInvitations || []).filter(inv => inv.id !== invitationId)
+        );
+        
+        setError(null);
+        return data;
+      } else {
+        throw new Error('Failed to process invitation');
       }
-      
-      // Remove invitation from pending list
-      setPendingInvitations(prevInvitations => 
-        prevInvitations.filter(inv => inv.id !== invitationId)
-      );
-      
-      setError(null);
     } catch (err) {
+      console.error('❌ Error responding to invitation:', err);
       setError(err.message || 'Failed to process invitation');
     } finally {
       setIsLoading(false);
@@ -285,180 +352,54 @@ export const VaultProvider = ({ children }) => {
     }
   };
 
-  // Approve a pending transaction
-  const approveTransaction = async (transactionId) => {
-    setIsLoading(true);
-    try {
-      // API call to approve transaction would happen here
-      
-      // Update the transaction in the list
-      setPendingTransactions(prev => 
-        prev.map(tx => {
-          if (tx.id === transactionId) {
-            const updatedTx = {
-              ...tx,
-              approvalsReceived: tx.approvalsReceived + 1
-            };
-            
-            // If all approvals received, move to history
-            if (updatedTx.approvalsReceived >= updatedTx.approvalsNeeded) {
-              updatedTx.status = 'COMPLETED';
-              setTransactionHistory(prev => [...prev, updatedTx]);
-              return null; // Remove from pending
-            }
-            
-            return updatedTx;
-          }
-          return tx;
-        }).filter(Boolean) // Remove null items
-      );
-      
-      setError(null);
-    } catch (err) {
-      setError(err.message || 'Failed to approve transaction');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Add member to team
-  const addTeamMember = async (teamId, memberEmail) => {
-    setIsLoading(true);
-    try {
-      // API call to backend to initiate member addition process
-      // This would trigger key resharding and email invitations in your backend
-      
-      // Mock successful response
-      const teamToUpdate = teams.find(team => team.id === teamId);
-      if (!teamToUpdate) throw new Error("Team not found");
-      
-      // Update the team locally with increased member count
-      const updatedTeam = {
-        ...teamToUpdate,
-        memberCount: teamToUpdate.memberCount + 1,
-        // In a real implementation, you might add pending member info here
-      };
-      
-      // Update teams state
-      setTeams(prevTeams => 
-        prevTeams.map(team => team.id === teamId ? updatedTeam : team)
-      );
-      
-      // If this is the active team, update that too
-      if (activeTeam && activeTeam.id === teamId) {
-        setActiveTeam(updatedTeam);
-      }
-      
-      setError(null);
-      return true;
-    } catch (err) {
-      setError(err.message || 'Failed to add team member');
-      return false;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Remove member from team (requires consensus)
-  const removeTeamMember = async (teamId, memberId) => {
-    setIsLoading(true);
-    try {
-      // In a real implementation:
-      // 1. This would initiate a vote or approval process among team members
-      // 2. Backend would handle key resharding after approval
-      // 3. Removed member would lose access to team assets
-      
-      // For now, mock the API call and successful removal
-      const teamToUpdate = teams.find(team => team.id === teamId);
-      if (!teamToUpdate) throw new Error("Team not found");
-      
-      // Update the team with decreased member count
-      const updatedTeam = {
-        ...teamToUpdate,
-        memberCount: Math.max(1, teamToUpdate.memberCount - 1), // Ensure at least 1 member
-      };
-      
-      // Update teams state
-      setTeams(prevTeams => 
-        prevTeams.map(team => team.id === teamId ? updatedTeam : team)
-      );
-      
-      // If this is the active team, update that too
-      if (activeTeam && activeTeam.id === teamId) {
-        setActiveTeam(updatedTeam);
-      }
-      
-      setError(null);
-      return true;
-    } catch (err) {
-      setError(err.message || 'Failed to remove team member');
-      return false;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   // Buy crypto asset
   const buyAsset = async (asset, amount, teamId = null) => {
     setIsLoading(true);
     try {
-      // Determine if this is a personal or team purchase
-      const isTeamPurchase = !!teamId;
-      
-      if (isTeamPurchase) {
-        // For team purchases, we need to create a transaction that requires approval
-        const transactionData = {
-          type: 'BUY',
+      const response = await fetch(`${API_BASE_URL}/api/assets/buy`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
           asset,
-          amount,
-          teamId
-        };
+          amount: parseFloat(amount),
+          teamId,
+          userId: authUser?.id
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
         
-        // This creates a pending transaction that needs team approval
-        return await createTeamTransaction(transactionData);
-      } else {
-        // Personal purchase can be executed immediately
-        // API call to execute purchase would happen here
-        
-        // Mock response - add the asset to personal assets
-        const existingAsset = personalAssets.find(a => a.symbol === asset);
-        
-        if (existingAsset) {
-          // Update existing asset
-          setPersonalAssets(prevAssets => 
-            prevAssets.map(a => a.symbol === asset 
-              ? { ...a, amount: parseFloat(a.amount) + parseFloat(amount) } 
-              : a
-            )
-          );
+        // Refresh appropriate assets
+        if (teamId) {
+          await loadTeamAssets(teamId);
         } else {
-          // Add new asset
-          setPersonalAssets(prevAssets => [
-            ...prevAssets, 
-            { 
-              symbol: asset, 
-              amount: parseFloat(amount),
-              value: parseFloat(amount) * 1000, // Mock value, would be real price in production
-              lastUpdated: new Date().toISOString()
-            }
-          ]);
+          await loadPersonalAssets(authUser?.id);
         }
         
         // Add to transaction history
         const newTransaction = {
-          id: `tx-${Date.now()}`,
+          id: data.transactionId || `tx-${Date.now()}`,
           type: 'BUY',
           amount,
           asset,
           status: 'COMPLETED',
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          teamId
         };
         
-        setTransactionHistory(prev => [...prev, newTransaction]);
+        setTransactionHistory(prev => [...(prev || []), newTransaction]);
         setError(null);
-        return newTransaction;
+        return data;
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to buy asset');
       }
     } catch (err) {
+      console.error('❌ Error buying asset:', err);
       setError(err.message || 'Failed to buy asset');
       return null;
     } finally {
@@ -470,93 +411,52 @@ export const VaultProvider = ({ children }) => {
   const sellAsset = async (asset, amount, teamId = null) => {
     setIsLoading(true);
     try {
-      // Determine if this is a personal or team sale
-      const isTeamSale = !!teamId;
-      
-      if (isTeamSale) {
-        // For team sales, we need to create a transaction that requires approval
-        const transactionData = {
-          type: 'SELL',
+      const response = await fetch(`${API_BASE_URL}/api/assets/sell`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
           asset,
-          amount,
-          teamId
-        };
+          amount: parseFloat(amount),
+          teamId,
+          userId: authUser?.id
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
         
-        // This creates a pending transaction that needs team approval
-        return await createTeamTransaction(transactionData);
-      } else {
-        // Personal sale can be executed immediately
-        // API call to execute sale would happen here
-        
-        // Find the asset in personal assets
-        const existingAsset = personalAssets.find(a => a.symbol === asset);
-        
-        // Check if user has enough of the asset
-        if (!existingAsset || parseFloat(existingAsset.amount) < parseFloat(amount)) {
-          throw new Error("Insufficient balance");
+        // Refresh appropriate assets
+        if (teamId) {
+          await loadTeamAssets(teamId);
+        } else {
+          await loadPersonalAssets(authUser?.id);
         }
-        
-        // Update personal assets
-        setPersonalAssets(prevAssets => 
-          prevAssets.map(a => {
-            if (a.symbol === asset) {
-              const newAmount = parseFloat(a.amount) - parseFloat(amount);
-              // Remove asset completely if balance is zero
-              if (newAmount <= 0) return null;
-              // Otherwise update amount
-              return { ...a, amount: newAmount };
-            }
-            return a;
-          }).filter(Boolean) // Remove null items (zero balance assets)
-        );
         
         // Add to transaction history
         const newTransaction = {
-          id: `tx-${Date.now()}`,
+          id: data.transactionId || `tx-${Date.now()}`,
           type: 'SELL',
           amount,
           asset,
           status: 'COMPLETED',
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          teamId
         };
         
-        setTransactionHistory(prev => [...prev, newTransaction]);
+        setTransactionHistory(prev => [...(prev || []), newTransaction]);
         setError(null);
-        return newTransaction;
+        return data;
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to sell asset');
       }
     } catch (err) {
+      console.error('❌ Error selling asset:', err);
       setError(err.message || 'Failed to sell asset');
       return null;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Delete team (requires unanimous consent)
-  const deleteTeam = async (teamId) => {
-    setIsLoading(true);
-    try {
-      // In a real implementation:
-      // 1. This would create a deletion proposal
-      // 2. All team members would need to approve
-      // 3. Assets would need to be distributed or transferred
-      
-      // For now, mock the API call and successful deletion
-      
-      // Remove the team from state
-      setTeams(prevTeams => prevTeams.filter(team => team.id !== teamId));
-      
-      // If this was the active team, reset active team
-      if (activeTeam && activeTeam.id === teamId) {
-        setActiveTeam(null);
-        setTeamAssets([]);
-      }
-      
-      setError(null);
-      return true;
-    } catch (err) {
-      setError(err.message || 'Failed to delete team');
-      return false;
     } finally {
       setIsLoading(false);
     }
@@ -566,35 +466,53 @@ export const VaultProvider = ({ children }) => {
   const transferAssets = async (fromType, toType, asset, amount, teamId) => {
     setIsLoading(true);
     try {
-      // fromType and toType can be 'personal' or 'team'
-      // If toType is 'team', this requires team approval
-      
-      if (toType === 'team') {
-        // Create a team transaction for approval
-        const transactionData = {
-          type: 'DEPOSIT',
+      const response = await fetch(`${API_BASE_URL}/api/assets/transfer`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          fromType, // 'personal' or 'team'
+          toType,   // 'personal' or 'team'
           asset,
-          amount,
+          amount: parseFloat(amount),
           teamId,
-          fromPersonal: true
+          userId: authUser?.id
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Refresh both personal and team assets
+        await loadPersonalAssets(authUser?.id);
+        if (teamId) {
+          await loadTeamAssets(teamId);
+        }
+        
+        // Add to transaction history
+        const newTransaction = {
+          id: data.transactionId || `tx-${Date.now()}`,
+          type: 'TRANSFER',
+          amount,
+          asset,
+          status: data.requiresApproval ? 'PENDING_APPROVAL' : 'COMPLETED',
+          timestamp: new Date().toISOString(),
+          fromType,
+          toType,
+          teamId
         };
         
-        return await createTeamTransaction(transactionData);
-      } else if (fromType === 'team') {
-        // Withdrawing from team to personal requires approval
-        const transactionData = {
-          type: 'WITHDRAW',
-          asset,
-          amount,
-          teamId,
-          toPersonal: true
-        };
-        
-        return await createTeamTransaction(transactionData);
+        setTransactionHistory(prev => [...(prev || []), newTransaction]);
+        setError(null);
+        return data;
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to transfer assets');
       }
-      
-      setError(null);
     } catch (err) {
+      console.error('❌ Error transferring assets:', err);
       setError(err.message || 'Failed to transfer assets');
       return null;
     } finally {
@@ -602,77 +520,73 @@ export const VaultProvider = ({ children }) => {
     }
   };
 
-  // Handle member approval with authentication
-  const handleMemberApproval = async (transactionId, memberId, approved) => {
-    if (!isLoggedIn || !authUser) {
-      setError('User not authenticated');
-      return;
-    }
+  // Clear error state
+  const clearError = () => {
+    setError(null);
+    if (clearTeamError) clearTeamError(); // Also clear team errors
+  };
 
-    setIsLoading(true);
-    try {
-      const response = await fetch(`/api/transactions/${transactionId}/approve`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          memberId,
-          approved
-        })
-      });
-
-      if (!response.ok) throw new Error('Failed to process approval');
-      
-      const updatedTransaction = await response.json();
-      setPendingTransactions(prev => 
-        prev.map(tx => tx.id === transactionId ? updatedTransaction : tx)
-      );
-      
-      setMemberApprovals(prev => ({
-        ...prev,
-        [transactionId]: {
-          ...prev[transactionId],
-          [memberId]: approved
-        }
-      }));
-      
-      setError(null);
-    } catch (err) {
-      setError(err.message || 'Failed to process approval');
-      throw err;
-    } finally {
-      setIsLoading(false);
+  // Refresh all data
+  const refreshData = async () => {
+    if (isLoggedIn && authUser) {
+      await loadUserData(authUser.id);
+      if (refreshTeams) await refreshTeams();
     }
   };
 
   return (
     <VaultContext.Provider value={{ 
+      // Authentication state
       isAuthenticated: isLoggedIn,
-      isLoading,
-      error,
-      teams,
-      activeTeam,
-      personalAssets,
-      teamAssets,
-      pendingInvitations,
-      transactionHistory,
-      pendingTransactions,
+      user: authUser,
+      
+      // Loading and error states
+      isLoading: isLoading || (teamState?.loading || false),
+      error: error || teamState?.error || null,
+      
+      // Team data (from TeamContext) - with safe defaults
+      teams: teamState?.teams || [],
+      activeTeam: teamState?.currentTeam || null,
+      pendingTeamTransactions: teamState?.pendingTransactions || [],
+      completedTeamTransactions: teamState?.completedTransactions || [],
+      
+      // Asset data - guaranteed to be arrays
+      personalAssets: personalAssets || [],
+      teamAssets: teamAssets || [],
+      
+      // Invitations - guaranteed to be array
+      pendingInvitations: pendingInvitations || [],
+      
+      // Transaction history - guaranteed to be array
+      transactionHistory: transactionHistory || [],
       createTeam,
       selectTeam,
-      respondToInvitation,
-      createTeamTransaction,
+      addTeamMember: addTeamMemberInContext,
+      removeTeamMember: removeTeamMemberInContext,
+      deleteTeam: deleteTeamInContext,
+      fetchTeamDetails,
+      initiateTransaction,
       approveTransaction,
-      addTeamMember,
-      removeTeamMember,
+      
+      // Invitation operations
+      respondToInvitation,
+      
+      // Asset operations
       buyAsset,
       sellAsset,
-      deleteTeam,
       transferAssets,
-      memberApprovals,
-      handleMemberApproval,
-      loadUserData, // Expose loadUserData for manual refresh
+      
+      // Utility functions
+      clearError,
+      refreshData,
+      refreshTeams
+
+//Conflict Comment - Modified by Sameer
+//       deleteTeam,
+//       transferAssets,
+//       memberApprovals,
+//       handleMemberApproval,
+//       loadUserData, // Expose loadUserData for manual refresh
     }}>
       {children}
     </VaultContext.Provider>
@@ -680,6 +594,12 @@ export const VaultProvider = ({ children }) => {
 };
 
 // Hook to use the Vault context
-export const useVault = () => useContext(VaultContext);
+export const useVault = () => {
+  const context = useContext(VaultContext);
+  if (!context) {
+    throw new Error('useVault must be used within a VaultProvider');
+  }
+  return context;
+};
 
 export default VaultContext;

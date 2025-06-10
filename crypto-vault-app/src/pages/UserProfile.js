@@ -303,10 +303,7 @@
 // };
 
 // export default UserProfile;
-
-
 // src/pages/UserProfile.js
-
 import React, { useEffect, useState } from 'react';
 import { useVault } from '../context/VaultContext';
 import { useAuthContext } from '../context/AuthContext'; // Import AuthContext hook
@@ -322,7 +319,7 @@ const UserProfile = () => {
     transactionHistory,
     isLoading 
   } = useVault();
-
+  
   const [totalValue, setTotalValue] = useState(0);
   const [teamDistribution, setTeamDistribution] = useState([]);
 
@@ -331,10 +328,10 @@ const UserProfile = () => {
     if (!authUser) return;
     
     // Calculate total value of personal assets
-    const personalTotal = personalAssets.reduce((sum, asset) => sum + (asset.value || 0), 0);
+    const personalTotal = (personalAssets || []).reduce((sum, asset) => sum + (asset.value || 0), 0);
     
     // Calculate team distribution
-    if (teams && teams.length > 0) {
+    if (teams && teams.length > 0 && user) {
       const distribution = teams.map(team => {
         // In a real app, you'd fetch actual team asset value data
         // For now we'll generate a random value between 10-60% for the demo
@@ -349,11 +346,13 @@ const UserProfile = () => {
         };
       });
       setTeamDistribution(distribution);
+    } else {
+      setTeamDistribution([]);
     }
     
     // Set total value (would include team values in a real app)
     setTotalValue(personalTotal);
-  }, [personalAssets, teams, authUser]);
+  }, [personalAssets, teams, user]);
 
   // Format currency value to USD
   const formatCurrency = (value) => {
@@ -384,20 +383,37 @@ const UserProfile = () => {
     }).length;
   };
 
-  // Redirect if not logged in
-  useEffect(() => {
-    if (!isLoggedIn && !isLoading) {
-      // Redirect to login page if not logged in
-      // This would typically use your router, e.g.:
-      // history.push('/login') or navigate('/login')
-      console.log("User not logged in, should redirect to login");
-    }
-  }, [isLoggedIn, isLoading]);
+  // Debug logging - remove this after fixing
+  console.log('UserProfile Debug:', { 
+    isLoading, 
+    user, 
+    teams, 
+    personalAssets, 
+    transactionHistory 
+  });
 
-  if (isLoading || !authUser) {
+  // Show loading state only when explicitly loading
+  if (isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-yellow-500"></div>
+        <p className="ml-4 text-gray-400">Loading user data...</p>
+      </div>
+    );
+  }
+
+  // If not loading but user is null/undefined, show error state
+  if (!user) {
+    return (
+      <div className="flex justify-center items-center h-64 flex-col">
+        <div className="text-red-500 text-xl mb-4">⚠️</div>
+        <p className="text-gray-400 mb-4">Unable to load user data</p>
+        <button 
+          onClick={() => window.location.reload()} 
+          className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-md transition"
+        >
+          Retry
+        </button>
       </div>
     );
   }
@@ -410,15 +426,13 @@ const UserProfile = () => {
           <div className="flex items-center">
             <div className="w-20 h-20 bg-gradient-to-br from-yellow-500 to-yellow-700 rounded-full flex items-center justify-center text-white mr-6 shadow-lg">
               <span className="text-2xl font-bold">
-                {authUser.email ? authUser.email.charAt(0).toUpperCase() : "U"}
+                {user?.name ? user.name.charAt(0).toUpperCase() : "U"}
               </span>
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-white">
-                {authUser.name || "User Profile"}
-              </h1>
-              <p className="text-gray-400">{authUser.email}</p>
-              <p className="text-gray-400 text-sm mt-1">User ID: {authUser.sub || '—'}</p>
+              <h1 className="text-2xl font-bold text-white">{user?.name || "User Profile"}</h1>
+              <p className="text-gray-400">{user?.email || "No email provided"}</p>
+              <p className="text-gray-400 text-sm mt-1">User ID: {user?.id || '—'}</p>
             </div>
           </div>
           
@@ -448,11 +462,11 @@ const UserProfile = () => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
               <div className="bg-gray-800 p-4 rounded-lg">
                 <h3 className="text-sm text-gray-400 mb-1">Personal Assets</h3>
-                <p className="text-lg font-semibold text-white">{personalAssets.length} assets</p>
+                <p className="text-lg font-semibold text-white">{personalAssets?.length || 0} assets</p>
               </div>
               <div className="bg-gray-800 p-4 rounded-lg">
                 <h3 className="text-sm text-gray-400 mb-1">Team Vaults</h3>
-                <p className="text-lg font-semibold text-white">{teams.length} teams</p>
+                <p className="text-lg font-semibold text-white">{teams?.length || 0} teams</p>
               </div>
               <div className="bg-gray-800 p-4 rounded-lg">
                 <h3 className="text-sm text-gray-400 mb-1">Security Level</h3>
