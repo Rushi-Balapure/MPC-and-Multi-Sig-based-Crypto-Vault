@@ -59,6 +59,39 @@ const TeamMembersList = ({
     }
   };
 
+  const handleShardValueChange = (memberId, value) => {
+    setShardValues(prev => ({
+      ...prev,
+      [memberId]: value
+    }));
+  };
+
+  const handleApprove = async (memberId) => {
+    const shardValue = shardValues[memberId];
+    if (!shardValue) {
+      alert('Please enter a shard value');
+      return;
+    }
+
+    try {
+      await onApprove(memberId, shardValue);
+      // Clear the shard value after successful approval
+      setShardValues(prev => ({
+        ...prev,
+        [memberId]: ''
+      }));
+    } catch (error) {
+      // Error will be handled by the VaultContext
+      console.error('Approval failed:', error);
+    }
+  };
+
+  const getMemberApprovalStatus = (memberId) => {
+    const status = approvalStatus[memberId];
+    if (!status) return { approved: false, timestamp: null };
+    return status;
+  };
+
   return (
     <div>
       <div className="flex justify-between items-center mb-4">

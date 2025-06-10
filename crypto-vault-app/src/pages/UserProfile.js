@@ -303,17 +303,19 @@
 // };
 
 // export default UserProfile;
-
 // src/pages/UserProfile.js
 import React, { useEffect, useState } from 'react';
 import { useVault } from '../context/VaultContext';
+import { useAuthContext } from '../context/AuthContext'; // Import AuthContext hook
 import TokenCard from '../components/dashboard/TokenCard';
 
 const UserProfile = () => {
+  // Get authentication data from AuthContext
+  const { user: authUser, isLoggedIn } = useAuthContext();
+  
   const { 
-    user, 
-    teams, 
     personalAssets, 
+    teams,
     transactionHistory,
     isLoading 
   } = useVault();
@@ -323,6 +325,8 @@ const UserProfile = () => {
 
   // Calculate total portfolio value and team distribution when personal assets or teams change
   useEffect(() => {
+    if (!authUser) return;
+    
     // Calculate total value of personal assets
     const personalTotal = (personalAssets || []).reduce((sum, asset) => sum + (asset.value || 0), 0);
     
@@ -337,7 +341,8 @@ const UserProfile = () => {
           name: team.name,
           memberCount: team.memberCount,
           ownershipPercentage,
-          isCreator: team.createdBy === user.id
+          // Use the sub from Cognito as the user ID for comparison
+          isCreator: team.createdBy === authUser.sub
         };
       });
       setTeamDistribution(distribution);

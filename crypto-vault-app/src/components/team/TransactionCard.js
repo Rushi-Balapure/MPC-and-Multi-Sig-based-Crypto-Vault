@@ -1,11 +1,14 @@
 // src/components/team/TransactionCard.js
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useVault } from '../../context/VaultContext';
+import ShardUploadModal from './ShardUploadModal';
 
 const TransactionCard = ({ transaction, teamMembers, showApproveButton = false }) => {
   const { approveTransaction, user } = useVault();
   const navigate = useNavigate();
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [error, setError] = useState('');
   
   // Format date from transaction timestamp
   const formattedDate = transaction.createdAt ? new Date(transaction.createdAt).toLocaleString() : 
@@ -23,14 +26,55 @@ const TransactionCard = ({ transaction, teamMembers, showApproveButton = false }
   // Check if current user has already approved
   // This may need adjustment based on how you track approvals
   const hasApproved = transaction.approvals ? 
-    transaction.approvals.some(approver => approver.id === user.id) : 
+    transaction.approvals.some(approver => approver.id === (user?.id || '')) : 
     false;  // Fallback if approvals array isn't available
   
   const handleApprove = async () => {
+    if (!user?.id) {
+      setError('User not authenticated');
+      return;
+    }
     if (hasApproved) return;
-    
-    // Use VaultContext's approveTransaction method
-    await approveTransaction(transaction.id);
+    setError('');
+    setIsModalOpen(true);
+  };
+
+  const handleShardSubmit = async (shardValue) => {
+    if (!user?.id) {
+      setError('User not authenticated');
+      setIsModalOpen(false);
+      return;
+    }
+
+    try {
+      setError('');
+      const response = await fetch('https://2zfmmwd269.execute-api.ap-south-1.amazonaws.com/prod', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          team_id: transaction.teamId,
+          shard_id: user.id,
+          shard_value: shardValue
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to submit shard');
+      }
+
+      // After successful shard submission, approve the transaction
+      await approveTransaction(transaction.id);
+      setIsModalOpen(false);
+      // Force a small delay to ensure state updates are processed
+      await new Promise(resolve => setTimeout(resolve, 100));
+    } catch (error) {
+      console.error('Error submitting shard:', error);
+      setError(error.message || 'Failed to submit shard. Please try again.');
+    }
   };
   
   const viewDetails = () => {
@@ -86,7 +130,7 @@ const TransactionCard = ({ transaction, teamMembers, showApproveButton = false }
         </div>
       </div>
       
-      <div className="flex justify-between">
+      <div className="flex justify-between items-center mt-4">
         <button
           onClick={viewDetails}
           className="text-gray-300 hover:text-white text-sm"
@@ -107,6 +151,21 @@ const TransactionCard = ({ transaction, teamMembers, showApproveButton = false }
           <span className="text-green-400 text-sm">Approved</span>
         )}
       </div>
+
+      {error && (
+        <div className="mt-4 text-red-400 text-sm text-center">
+          {error}
+        </div>
+      )}
+
+      <ShardUploadModal
+        isOpen={isModalOpen}
+        onClose={() => {
+          setIsModalOpen(false);
+          setError('');
+        }}
+        onSubmit={handleShardSubmit}
+      />
     </div>
   );
 };

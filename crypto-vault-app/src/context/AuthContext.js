@@ -164,79 +164,86 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [sessionError, setSessionError] = useState(null);
 
-  // Check for existing Cognito session on load
-  useEffect(() => {
-    const checkCognitoSession = async () => {
-      try {
-        setIsLoading(true);
-        
-        // Check if there's an active Cognito session
-        const cognitoUser = getCurrentUser();
-        
-        if (cognitoUser) {
-          try {
-            const session = await getSession();
-            
-            if (session && session.isValid()) {
-              // Get the id token from the session
-              const idToken = session.getIdToken().getJwtToken();
-              
-              // Get user attributes
-              cognitoUser.getUserAttributes((err, attributes) => {
-                if (err) {
-                  console.error("Error getting user attributes:", err);
-                  setIsLoading(false);
-                  return;
-                }
-                
-                // Create a user object from attributes
-                const userData = {};
-                attributes.forEach(attr => {
-                  userData[attr.getName()] = attr.getValue();
-                });
-                
-                // Set the token and user in state
-                setToken(idToken);
-                setUser(userData);
-                setIsLoggedIn(true);
-                setIsLoading(false);
-              });
-            } else {
-              // Session exists but is not valid
-              setToken(null);
-              setUser(null);
-              setIsLoggedIn(false);
-              setIsLoading(false);
-            }
-          } catch (error) {
-            console.error("Session error:", error);
-            setToken(null);
-            setUser(null);
-            setIsLoggedIn(false);
-            setIsLoading(false);
-          }
-        } else {
-          // No Cognito session, set logged out
-          setToken(null);
-          setUser(null);
-          setIsLoggedIn(false);
-          setIsLoading(false);
-        }
-      } catch (error) {
-        console.error("Authentication error:", error);
-        setToken(null);
-        setUser(null);
-        setIsLoggedIn(false);
-        setIsLoading(false);
+  // Check and refresh session
+  const checkAndRefreshSession = async () => {
+    try {
+      setIsLoading(true);
+      setSessionError(null);
+
+      const cognitoUser = getCurrentUser();
+      if (!cognitoUser) {
+        throw new Error('No user found');
       }
-    };
-    
-    checkCognitoSession();
+
+      const session = await getSession();
+      if (!session.isValid()) {
+        // Session is invalid, attempt to refresh
+        await new Promise((resolve, reject) => {
+          cognitoUser.refreshSession(session.getRefreshToken(), (err, newSession) => {
+            if (err) {
+              reject(err);
+              return;
+            }
+            resolve(newSession);
+          });
+        });
+      }
+
+      // Get user attributes
+      const userData = await new Promise((resolve, reject) => {
+        cognitoUser.getUserAttributes((err, attributes) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          const userObj = {};
+          attributes.forEach(attr => {
+            userObj[attr.getName()] = attr.getValue();
+          });
+          resolve(userObj);
+        });
+      });
+
+      // Update state with valid session data
+      setToken(session.getIdToken().getJwtToken());
+      setUser(userData);
+      setIsLoggedIn(true);
+      
+      // Store session data
+      localStorage.setItem("vault_jwt", session.getIdToken().getJwtToken());
+      localStorage.setItem("vault_user", JSON.stringify(userData));
+      
+      return true;
+    } catch (error) {
+      console.error('Session check/refresh error:', error);
+      setSessionError(error.message);
+      // Clear invalid session data
+      setToken(null);
+      setUser(null);
+      setIsLoggedIn(false);
+      localStorage.removeItem("vault_jwt");
+      localStorage.removeItem("vault_user");
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Check session on mount and set up refresh interval
+  useEffect(() => {
+    checkAndRefreshSession();
+
+    // Set up periodic session check (every 5 minutes)
+    const sessionCheckInterval = setInterval(checkAndRefreshSession, 5 * 60 * 1000);
+
+    // Clean up interval on unmount
+    return () => clearInterval(sessionCheckInterval);
   }, []);
 
   // Modified login function to accept token and userData directly
-  const login = (idToken, userData) => {
+  const login = async (idToken, userData) => {
     try {
       setToken(idToken);
       setUser(userData);
@@ -248,18 +255,33 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Logout function
-  const logout = () => {
+  // Enhanced logout function
+  const logout = async () => {
     try {
       // Sign out from Cognito
-      cognitoSignOut();
+      await cognitoSignOut();
       
       // Clear state
       setToken(null);
       setUser(null);
       setIsLoggedIn(false);
+      localStorage.removeItem("vault_jwt");
+      localStorage.removeItem("vault_user");
+      
+      // Clear any other app-specific storage
+      localStorage.removeItem("wallet");
+      sessionStorage.clear();
+      
+      // Force reload to clear any remaining state
+      window.location.href = '/auth';
     } catch (error) {
       console.error("Logout error:", error);
+      // Still clear everything even if there's an error
+      setToken(null);
+      setUser(null);
+      setIsLoggedIn(false);
+      localStorage.clear();
+      sessionStorage.clear();
     }
   };
 
@@ -269,9 +291,11 @@ export const AuthProvider = ({ children }) => {
         token, 
         user, 
         isLoggedIn, 
-        isLoading, 
+        isLoading,
+        sessionError,
         login, 
-        logout 
+        logout,
+        checkAndRefreshSession // Expose the refresh function
       }}
     >
       {children}

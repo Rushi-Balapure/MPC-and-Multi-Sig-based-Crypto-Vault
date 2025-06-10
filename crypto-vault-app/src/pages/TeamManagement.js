@@ -102,6 +102,20 @@ const TeamManagement = () => {
     switchTeam(teamId);
   };
 
+  const handleApproval = async (memberId, shardValue) => {
+    if (!activeTeam) {
+      console.error('No active team selected');
+      return;
+    }
+
+    try {
+      await handleMemberApproval(activeTeam.id, memberId, shardValue);
+    } catch (error) {
+      console.error('Approval failed:', error);
+      // Error will be handled by the VaultContext and displayed in the UI
+    }
+  };
+
   const navigateToCreateTeam = () => {
     navigate('/team/create');
   };
@@ -334,6 +348,10 @@ const TeamManagement = () => {
                   members={currentTeam.members || []}
                   memberCount={currentTeam.members ? currentTeam.members.length : (currentTeam.memberCount || 0)}
                   createdBy={currentTeam.createdBy}
+                  
+                  //Conflict Comment - Modified by Sameer
+//                   onApprove={handleApproval}
+//                   approvalStatus={memberApprovals}
                 />
               )}
 
@@ -359,20 +377,16 @@ const TeamManagement = () => {
 
       {/* Delete Team Confirmation Modal */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-gray-800 p-6 rounded-lg w-full max-w-md">
-            <h3 className="text-xl font-bold text-white mb-4">Delete Team Vault</h3>
-            <p className="text-gray-300 mb-6">
-              Are you sure you want to delete this team vault? This action requires consent from all team members and can only be completed when the vault contains no assets.
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-xl font-bold text-white mb-4">Delete Team?</h3>
+            <p className="text-gray-400 mb-6">
+              This action cannot be undone. All team members must approve this action.
             </p>
-
             {deleteError && (
-              <div className="bg-red-900/50 border border-red-500 text-red-300 px-4 py-3 rounded mb-4">
-                {deleteError}
-              </div>
+              <p className="text-red-400 mb-4">{deleteError}</p>
             )}
-
-            <div className="flex justify-end space-x-4">
+            <div className="flex justify-end gap-4">
               <button
                 className="px-4 py-2 bg-gray-700 text-white rounded-md hover:bg-gray-600 transition-colors"
                 onClick={() => {
@@ -384,6 +398,7 @@ const TeamManagement = () => {
               </button>
               <button
                 className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+
                 onClick={handleDeleteTeam}
                 disabled={loading}
               >
