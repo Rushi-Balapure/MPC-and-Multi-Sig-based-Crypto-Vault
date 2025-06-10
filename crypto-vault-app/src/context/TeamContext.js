@@ -1,25 +1,76 @@
 // src/context/TeamContext.js
-import React, { createContext, useState, useEffect, useContext } from 'react';
+import React, { createContext, useContext, useReducer, useCallback, useEffect } from 'react';
+
+// Action types
+const TEAM_ACTIONS = {
+  SET_LOADING: 'SET_LOADING',
+  SET_ERROR: 'SET_ERROR',
+  CLEAR_ERROR: 'CLEAR_ERROR',
+  SET_TEAMS: 'SET_TEAMS',
+  SET_CURRENT_TEAM: 'SET_CURRENT_TEAM',
+  SET_TRANSACTIONS: 'SET_TRANSACTIONS',
+  SET_USER_EMAIL: 'SET_USER_EMAIL',
+  RESET_STATE: 'RESET_STATE'
+};
+
+// Initial state
+const initialState = {
+  teams: [],
+  currentTeam: null,
+  transactions: [],
+  pendingTransactions: [],
+  completedTransactions: [],
+  loading: false,
+  error: null,
+  userEmail: null
+};
+
+// Reducer for better state management
+const teamReducer = (state, action) => {
+  switch (action.type) {
+    case TEAM_ACTIONS.SET_LOADING:
+      return { ...state, loading: action.payload };
+    
+    case TEAM_ACTIONS.SET_ERROR:
+      return { ...state, error: action.payload, loading: false };
+    
+    case TEAM_ACTIONS.CLEAR_ERROR:
+      return { ...state, error: null };
+    
+    case TEAM_ACTIONS.SET_TEAMS:
+      return { ...state, teams: action.payload, loading: false };
+    
+    case TEAM_ACTIONS.SET_CURRENT_TEAM:
+      return { ...state, currentTeam: action.payload };
+    
+    case TEAM_ACTIONS.SET_TRANSACTIONS:
+      return { 
+        ...state, 
+        transactions: action.payload.all || [],
+        pendingTransactions: action.payload.pending || [],
+        completedTransactions: action.payload.completed || []
+      };
+    
+    case TEAM_ACTIONS.SET_USER_EMAIL:
+      return { ...state, userEmail: action.payload };
+    
+    case TEAM_ACTIONS.RESET_STATE:
+      return initialState;
+    
+    default:
+      return state;
+  }
+};
 
 export const TeamContext = createContext();
 
 export const TeamProvider = ({ children }) => {
-  const [teamState, setTeamState] = useState({
-    teams: [],
-    currentTeam: null,
-    transactions: [],
-    pendingTransactions: [],
-    completedTransactions: [],
-    loading: false,
-    error: null
-  });
+  const [teamState, dispatch] = useReducer(teamReducer, initialState);
 
   const API_BASE_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5001';
 
-  // Helper function to get auth token (you'll need to implement this based on your auth system)
+  // Helper function to get auth token
   const getAuthToken = () => {
-    // Replace this with your actual token retrieval method
-    // For now, returning null until you implement session management
     return localStorage.getItem('authToken') || null;
   };
 
@@ -31,7 +82,6 @@ export const TeamProvider = ({ children }) => {
       ...options.headers
     };
 
-    // Add authorization header if token exists
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
@@ -42,56 +92,109 @@ export const TeamProvider = ({ children }) => {
     });
   };
 
-  const fetchAllTeams = async () => {
-    setTeamState(prev => ({ ...prev, loading: true, error: null }));
+  // Set user email - call this when user authenticates
+  const setUserEmail = useCallback((email) => {
+    dispatch({ type: TEAM_ACTIONS.SET_USER_EMAIL, payload: email });
+  }, []);
+
+  // Clear error
+  const clearError = useCallback(() => {
+    dispatch({ type: TEAM_ACTIONS.CLEAR_ERROR });
+  }, []);
+
+  // Fetch all teams for the current user - optimized version
+  const fetchAllTeams = useCallback(async (userEmail = null) => {
+    const emailToUse = userEmail || teamState.userEmail;
+    
+    if (!emailToUse) {
+      dispatch({ type: TEAM_ACTIONS.SET_ERROR, payload: 'User email is required to fetch teams' });
+      return [];
+    }
+
+    dispatch({ type: TEAM_ACTIONS.SET_LOADING, payload: true });
 
     try {
-      // Use the /user endpoint to get only teams the user is part of
-      const response = await makeAuthenticatedRequest(`${API_BASE_URL}/api/teams/user`);
+      // Use the optimized endpoint that fetches only user's teams
+      const response = await makeAuthenticatedRequest(
+        `${API_BASE_URL}/api/teams/user?email=${encodeURIComponent(emailToUse)}`
+      );
       
       if (!response.ok) {
         throw new Error(`Failed to fetch teams: ${response.statusText}`);
       }
 
       const data = await response.json();
-      
-      // Ensure we have a teams array, even if empty
       const fetchedTeams = Array.isArray(data.teams) ? data.teams : [];
+      
       console.log('✅ Teams fetched successfully:', fetchedTeams);
 
-      let currentTeam = null;
-      if (fetchedTeams.length > 0) {
-        currentTeam = fetchedTeams[0]; // default to first team
-        await fetchTeamTransactions(currentTeam.teamId);
-      }
+      dispatch({ type: TEAM_ACTIONS.SET_TEAMS, payload: fetchedTeams });
 
-      setTeamState(prev => ({
-        ...prev,
-        teams: fetchedTeams,
-        currentTeam,
-        loading: false
-      }));
+      // Set current team if none selected and teams exist
+      if (!teamState.currentTeam && fetchedTeams.length > 0) {
+        const firstTeam = fetchedTeams[0];
+        dispatch({ type: TEAM_ACTIONS.SET_CURRENT_TEAM, payload: firstTeam });
+        // Fetch transactions for the first team
+        await fetchTeamTransactions(firstTeam.teamId);
+      }
 
       return fetchedTeams;
     } catch (error) {
       console.error('❌ Error fetching teams:', error);
-      setTeamState(prev => ({
-        ...prev,
-        error: error.message || 'Failed to fetch teams',
-        loading: false,
-        teams: [] // Ensure teams is always an array
-      }));
+      dispatch({ 
+        type: TEAM_ACTIONS.SET_ERROR, 
+        payload: error.message || 'Failed to fetch teams' 
+      });
       return [];
     }
-  };
+  }, [teamState.userEmail, teamState.currentTeam]);
 
-  const fetchTeamTransactions = async (teamId) => {
+  // Fetch specific team details
+  const fetchTeamDetails = useCallback(async (teamId, userEmail = null) => {
+    const emailToUse = userEmail || teamState.userEmail;
+    
+    if (!teamId) {
+      dispatch({ type: TEAM_ACTIONS.SET_ERROR, payload: 'Team ID is required' });
+      return null;
+    }
+
+    dispatch({ type: TEAM_ACTIONS.SET_LOADING, payload: true });
+
+    try {
+      const url = emailToUse 
+        ? `${API_BASE_URL}/api/teams/${teamId}?userEmail=${encodeURIComponent(emailToUse)}`
+        : `${API_BASE_URL}/api/teams/${teamId}`;
+        
+      const response = await makeAuthenticatedRequest(url);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch team details: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ Team details fetched:', data.team);
+
+      dispatch({ type: TEAM_ACTIONS.SET_CURRENT_TEAM, payload: data.team });
+      dispatch({ type: TEAM_ACTIONS.SET_LOADING, payload: false });
+
+      return data.team;
+    } catch (error) {
+      console.error('❌ Error fetching team details:', error);
+      dispatch({ 
+        type: TEAM_ACTIONS.SET_ERROR, 
+        payload: error.message || 'Failed to fetch team details' 
+      });
+      return null;
+    }
+  }, [teamState.userEmail]);
+
+  // Fetch team transactions
+  const fetchTeamTransactions = useCallback(async (teamId) => {
     if (!teamId) return [];
     
     console.log('📋 Fetching transactions for team:', teamId);
 
     try {
-      // Replace this with actual API call when you implement transaction endpoints
       const response = await makeAuthenticatedRequest(`${API_BASE_URL}/api/transactions/${teamId}`);
       
       if (response.ok) {
@@ -101,12 +204,14 @@ export const TeamProvider = ({ children }) => {
         const pending = transactions.filter(tx => tx.status === 'pending');
         const completed = transactions.filter(tx => tx.status === 'completed');
 
-        setTeamState(prev => ({
-          ...prev,
-          transactions,
-          pendingTransactions: pending,
-          completedTransactions: completed
-        }));
+        dispatch({ 
+          type: TEAM_ACTIONS.SET_TRANSACTIONS, 
+          payload: { 
+            all: transactions, 
+            pending, 
+            completed 
+          } 
+        });
 
         return transactions;
       } else {
@@ -115,7 +220,7 @@ export const TeamProvider = ({ children }) => {
     } catch (error) {
       console.warn('⚠️ Transactions API not implemented yet, using mock data:', error.message);
       
-      // Mock transactions for now - ensure they're always arrays
+      // Mock transactions for development
       const mockTransactions = [
         {
           id: `tx-${teamId}-1`,
@@ -134,60 +239,43 @@ export const TeamProvider = ({ children }) => {
       const pending = mockTransactions.filter(tx => tx.status === 'pending');
       const completed = mockTransactions.filter(tx => tx.status === 'completed');
 
-      setTeamState(prev => ({
-        ...prev,
-        transactions: mockTransactions,
-        pendingTransactions: pending,
-        completedTransactions: completed
-      }));
+      dispatch({ 
+        type: TEAM_ACTIONS.SET_TRANSACTIONS, 
+        payload: { 
+          all: mockTransactions, 
+          pending, 
+          completed 
+        } 
+      });
 
       return mockTransactions;
     }
-  };
-
-  useEffect(() => {
-    fetchAllTeams();
   }, []);
 
-  const fetchTeamDetails = async (teamId) => {
-    if (!teamId) return null;
-    
-    setTeamState(prev => ({ ...prev, loading: true, error: null }));
-
-    try {
-      const response = await makeAuthenticatedRequest(`${API_BASE_URL}/api/teams/${teamId}`);
+  // Switch team
+  const switchTeam = useCallback(async (teamId) => {
+    const team = teamState.teams.find(t => t.teamId === teamId);
+    if (team) {
+      dispatch({ type: TEAM_ACTIONS.SET_CURRENT_TEAM, payload: team });
       
-      if (!response.ok) {
-        throw new Error(`Failed to fetch team details: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      console.log('✅ Team details fetched:', data.team);
-
-      setTeamState(prev => ({
-        ...prev,
-        currentTeam: data.team,
-        loading: false
-      }));
-
-      return data.team;
-    } catch (error) {
-      console.error('❌ Error fetching team details:', error);
-      setTeamState(prev => ({
-        ...prev,
-        error: error.message || 'Failed to fetch team details',
-        loading: false
-      }));
-      return null;
+      // Clear existing transactions when switching teams
+      dispatch({ 
+        type: TEAM_ACTIONS.SET_TRANSACTIONS, 
+        payload: { all: [], pending: [], completed: [] } 
+      });
+      
+      // Fetch transactions for the new team
+      await fetchTeamTransactions(teamId);
     }
-  };
+  }, [teamState.teams, fetchTeamTransactions]);
 
+  // Create team
   const createTeam = async (teamData) => {
     if (!teamData || !teamData.members) {
       throw new Error('Invalid team data');
     }
 
-    setTeamState(prev => ({ ...prev, loading: true, error: null }));
+    dispatch({ type: TEAM_ACTIONS.SET_LOADING, payload: true });
 
     try {
       const emailList = Array.isArray(teamData.members) ? teamData.members.map(m => m.email) : [];
@@ -222,40 +310,24 @@ export const TeamProvider = ({ children }) => {
       // Refresh teams list to get the latest data
       await fetchAllTeams();
       
-      setTeamState(prev => ({ ...prev, loading: false }));
+      dispatch({ type: TEAM_ACTIONS.SET_LOADING, payload: false });
 
       return result;
     } catch (error) {
       console.error('❌ Error creating team:', error);
-      setTeamState(prev => ({
-        ...prev,
-        error: error.message || 'Failed to create team',
-        loading: false
-      }));
+      dispatch({ 
+        type: TEAM_ACTIONS.SET_ERROR, 
+        payload: error.message || 'Failed to create team' 
+      });
       throw error;
     }
   };
 
-  const switchTeam = async (teamId) => {
-    const teams = teamState.teams || [];
-    const team = teams.find(t => t.teamId === teamId);
-    if (team) {
-      setTeamState(prev => ({
-        ...prev,
-        currentTeam: team,
-        transactions: [],
-        pendingTransactions: [],
-        completedTransactions: []
-      }));
-      await fetchTeamTransactions(teamId);
-    }
-  };
-
+  // Add team member
   const addTeamMember = async (teamId, memberData) => {
     if (!teamId || !memberData) return;
     
     try {
-      // Make API call to add member
       const response = await makeAuthenticatedRequest(`${API_BASE_URL}/api/teams/${teamId}/members`, {
         method: 'POST',
         body: JSON.stringify(memberData)
@@ -269,19 +341,19 @@ export const TeamProvider = ({ children }) => {
       await fetchAllTeams();
     } catch (error) {
       console.error('❌ Error adding team member:', error);
-      setTeamState(prev => ({
-        ...prev,
-        error: error.message || 'Failed to add team member'
-      }));
+      dispatch({ 
+        type: TEAM_ACTIONS.SET_ERROR, 
+        payload: error.message || 'Failed to add team member' 
+      });
       throw error;
     }
   };
 
+  // Remove team member
   const removeTeamMember = async (teamId, memberId) => {
     if (!teamId || !memberId) return;
     
     try {
-      // Make API call to remove member
       const response = await makeAuthenticatedRequest(`${API_BASE_URL}/api/teams/${teamId}/members/${memberId}`, {
         method: 'DELETE'
       });
@@ -294,14 +366,51 @@ export const TeamProvider = ({ children }) => {
       await fetchAllTeams();
     } catch (error) {
       console.error('❌ Error removing team member:', error);
-      setTeamState(prev => ({
-        ...prev,
-        error: error.message || 'Failed to remove team member'
-      }));
+      dispatch({ 
+        type: TEAM_ACTIONS.SET_ERROR, 
+        payload: error.message || 'Failed to remove team member' 
+      });
       throw error;
     }
   };
 
+  // Delete team
+  const deleteTeam = useCallback(async (teamId) => {
+    if (!teamId || !teamState.userEmail) {
+      throw new Error('Team ID and user email are required');
+    }
+
+    dispatch({ type: TEAM_ACTIONS.SET_LOADING, payload: true });
+
+    try {
+      const response = await makeAuthenticatedRequest(`${API_BASE_URL}/api/teams/${teamId}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ userEmail: teamState.userEmail })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete team');
+      }
+
+      // Refresh teams list after deletion
+      await fetchAllTeams();
+
+      // Clear current team if it was deleted
+      if (teamState.currentTeam && teamState.currentTeam.teamId === teamId) {
+        dispatch({ type: TEAM_ACTIONS.SET_CURRENT_TEAM, payload: null });
+      }
+
+      return true;
+    } catch (error) {
+      console.error('❌ Error deleting team:', error);
+      throw error;
+    } finally {
+      dispatch({ type: TEAM_ACTIONS.SET_LOADING, payload: false });
+    }
+  }, [teamState.userEmail, teamState.currentTeam, fetchAllTeams]);
+
+  // Initiate transaction
   const initiateTransaction = async (transactionData) => {
     if (!transactionData || !teamState.currentTeam) return null;
     
@@ -326,14 +435,15 @@ export const TeamProvider = ({ children }) => {
       return result;
     } catch (error) {
       console.error('❌ Error initiating transaction:', error);
-      setTeamState(prev => ({
-        ...prev,
-        error: error.message || 'Failed to initiate transaction'
-      }));
+      dispatch({ 
+        type: TEAM_ACTIONS.SET_ERROR, 
+        payload: error.message || 'Failed to initiate transaction' 
+      });
       throw error;
     }
   };
 
+  // Approve transaction
   const approveTransaction = async (transactionId, approverData) => {
     if (!transactionId || !approverData) return;
     
@@ -353,59 +463,40 @@ export const TeamProvider = ({ children }) => {
       }
     } catch (error) {
       console.error('❌ Error approving transaction:', error);
-      setTeamState(prev => ({
-        ...prev,
-        error: error.message || 'Failed to approve transaction'
-      }));
-      throw error;
-    }
-  };
-
-  const deleteTeam = async (teamId) => {
-    if (!teamId) return false;
-    
-    setTeamState(prev => ({ ...prev, loading: true, error: null }));
-
-    try {
-      const response = await makeAuthenticatedRequest(`${API_BASE_URL}/api/teams/${teamId}`, {
-        method: 'DELETE'
+      dispatch({ 
+        type: TEAM_ACTIONS.SET_ERROR, 
+        payload: error.message || 'Failed to approve transaction' 
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to delete team');
-      }
-
-      // Refresh teams list
-      await fetchAllTeams();
-      
-      setTeamState(prev => ({ ...prev, loading: false }));
-      return true;
-    } catch (error) {
-      console.error('❌ Error deleting team:', error);
-      setTeamState(prev => ({
-        ...prev,
-        error: error.message || 'Failed to delete team',
-        loading: false
-      }));
       throw error;
     }
   };
 
-  const clearError = () => {
-    setTeamState(prev => ({ ...prev, error: null }));
-  };
+  // Reset state - useful for logout
+  const resetState = useCallback(() => {
+    dispatch({ type: TEAM_ACTIONS.RESET_STATE });
+  }, []);
 
+  // Refresh teams
   const refreshTeams = () => {
     fetchAllTeams();
   };
+
+  // Auto-fetch teams when user email is set
+  useEffect(() => {
+    if (teamState.userEmail && teamState.teams.length === 0) {
+      fetchAllTeams();
+    }
+  }, [teamState.userEmail, fetchAllTeams, teamState.teams.length]);
 
   return (
     <TeamContext.Provider
       value={{
         teamState,
+        setUserEmail,
+        clearError,
+        fetchAllTeams,
         fetchTeamDetails,
         fetchTeamTransactions,
-        fetchAllTeams,
         createTeam,
         addTeamMember,
         removeTeamMember,
@@ -413,7 +504,7 @@ export const TeamProvider = ({ children }) => {
         approveTransaction,
         switchTeam,
         deleteTeam,
-        clearError,
+        resetState,
         refreshTeams
       }}
     >

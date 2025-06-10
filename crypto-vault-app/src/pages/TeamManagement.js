@@ -14,8 +14,11 @@ const TeamManagement = () => {
       pendingTransactions,
       completedTransactions,
       loading,
-      error
+      error,
+      userEmail
     },
+    setUserEmail,
+    fetchUserTeams,
     switchTeam,
     deleteTeam,
     fetchTeamDetails,
@@ -26,21 +29,74 @@ const TeamManagement = () => {
   const [activeTab, setActiveTab] = useState('members');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  const [initialLoad, setInitialLoad] = useState(true);
   const navigate = useNavigate();
+
+  // Get user email - replace this with your actual authentication method
+  const getCurrentUserEmail = () => {
+    // This is a placeholder - replace with your actual auth method
+    // Examples:
+    // - return localStorage.getItem('userEmail');
+    // - return authContext.user.email;
+    // - return getAuthenticatedUser().email;
+    
+    // For now, using localStorage as example
+    return localStorage.getItem('userEmail') || sessionStorage.getItem('userEmail');
+  };
+
+  // Initialize user email and fetch teams on component mount
+  useEffect(() => {
+    const initializeTeamData = async () => {
+      const currentUserEmail = getCurrentUserEmail();
+      
+      if (!currentUserEmail) {
+        console.error('No user email found. User might not be authenticated.');
+        // You might want to redirect to login page here
+        // navigate('/login');
+        setInitialLoad(false);
+        return;
+      }
+
+      // Set user email in context if not already set
+      if (!userEmail || userEmail !== currentUserEmail) {
+        setUserEmail(currentUserEmail);
+      }
+
+      // Fetch user's teams
+      try {
+        await fetchUserTeams(currentUserEmail);
+      } catch (error) {
+        console.error('Failed to fetch teams:', error);
+      } finally {
+        setInitialLoad(false);
+      }
+    };
+
+    if (initialLoad) {
+      initializeTeamData();
+    }
+  }, [userEmail, setUserEmail, fetchUserTeams, initialLoad, navigate]);
 
   // Clear any existing errors when component mounts
   useEffect(() => {
     if (error) {
       clearError();
     }
-  }, []);
+  }, [clearError]);
 
   // Auto-select first team if no current team is selected
   useEffect(() => {
-    if (!currentTeam && teams.length > 0) {
+    if (!currentTeam && teams.length > 0 && !loading) {
       switchTeam(teams[0].teamId);
     }
-  }, [currentTeam, teams, switchTeam]);
+  }, [currentTeam, teams, switchTeam, loading]);
+
+  // Fetch transactions when current team changes
+  useEffect(() => {
+    if (currentTeam && currentTeam.teamId) {
+      fetchTeamTransactions(currentTeam.teamId);
+    }
+  }, [currentTeam, fetchTeamTransactions]);
 
   const handleTeamSelect = (teamId) => {
     switchTeam(teamId);
@@ -83,10 +139,37 @@ const TeamManagement = () => {
     }
   };
 
-  if (loading) {
+  const handleRefreshTeams = async () => {
+    const currentUserEmail = getCurrentUserEmail();
+    if (currentUserEmail) {
+      await fetchUserTeams(currentUserEmail);
+    }
+  };
+
+  // Show loading state for initial load
+  if (initialLoad || loading) {
     return (
       <div className="flex flex-col items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-500 mb-4"></div>
         <p className="text-white">Loading team information...</p>
+      </div>
+    );
+  }
+
+  // Show authentication error if no user email
+  if (!userEmail && !getCurrentUserEmail()) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="bg-red-900/50 border border-red-500 text-red-300 px-4 py-3 rounded mb-6 text-center">
+          <h2 className="text-xl font-bold mb-2">Authentication Required</h2>
+          <p>Please log in to view your team vaults.</p>
+          <button
+            className="mt-4 bg-yellow-500 hover:bg-yellow-600 text-white px-6 py-2 rounded-md"
+            onClick={() => navigate('/login')}
+          >
+            Go to Login
+          </button>
+        </div>
       </div>
     );
   }
@@ -96,14 +179,33 @@ const TeamManagement = () => {
       {/* Error Display */}
       {error && (
         <div className="bg-red-900/50 border border-red-500 text-red-300 px-4 py-3 rounded mb-6">
-          {error}
+          <div className="flex justify-between items-center">
+            <span>{error}</span>
+            <button
+              onClick={clearError}
+              className="text-red-300 hover:text-red-100"
+            >
+              ×
+            </button>
+          </div>
         </div>
       )}
 
       {/* Team List Section */}
       <div className="mb-8">
         <div className="flex justify-between items-center mb-4">
-          <h1 className="text-2xl font-bold text-white">Team Vaults</h1>
+          <div className="flex items-center gap-4">
+            <h1 className="text-2xl font-bold text-white">Team Vaults</h1>
+            <button
+              onClick={handleRefreshTeams}
+              className="text-gray-400 hover:text-white p-2 rounded-md hover:bg-gray-700"
+              title="Refresh teams"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
           <button
             className="bg-yellow-500 hover:bg-yellow-600 text-white px-6 py-2 rounded-md flex items-center"
             onClick={navigateToCreateTeam}
@@ -122,7 +224,11 @@ const TeamManagement = () => {
               {teams.map(team => (
                 <li
                   key={team.teamId}
-                  className={`px-4 py-3 cursor-pointer ${currentTeam && currentTeam.teamId === team.teamId ? 'bg-gray-700' : 'hover:bg-gray-700/50'}`}
+                  className={`px-4 py-3 cursor-pointer transition-colors ${
+                    currentTeam && currentTeam.teamId === team.teamId 
+                      ? 'bg-gray-700' 
+                      : 'hover:bg-gray-700/50'
+                  }`}
                   onClick={() => handleTeamSelect(team.teamId)}
                 >
                   <div className="flex justify-between items-center">
@@ -130,6 +236,15 @@ const TeamManagement = () => {
                       <h3 className="text-lg font-medium text-white">{team.teamName || team.name}</h3>
                       <p className="text-gray-400 text-sm">
                         {team.members ? team.members.length : (team.memberCount || 0)} members
+                        {team.status && (
+                          <span className={`ml-2 px-2 py-1 rounded-full text-xs ${
+                            team.status === 'active' ? 'bg-green-500/20 text-green-400' :
+                            team.status === 'pending' ? 'bg-yellow-500/20 text-yellow-400' :
+                            'bg-red-500/20 text-red-400'
+                          }`}>
+                            {team.status}
+                          </span>
+                        )}
                       </p>
                     </div>
                     {currentTeam && currentTeam.teamId === team.teamId && (
@@ -182,28 +297,31 @@ const TeamManagement = () => {
           <div className="bg-gray-800 rounded-lg overflow-hidden">
             <div className="flex border-b border-gray-700">
               <button
-                className={`py-3 px-6 focus:outline-none ${activeTab === 'members' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-700 hover:text-white'
-                  }`}
+                className={`py-3 px-6 focus:outline-none transition-colors ${
+                  activeTab === 'members' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-700 hover:text-white'
+                }`}
                 onClick={() => setActiveTab('members')}
               >
                 Members ({currentTeam.members ? currentTeam.members.length : (currentTeam.memberCount || 0)})
               </button>
               <button
-                className={`py-3 px-6 focus:outline-none ${activeTab === 'pending' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-700 hover:text-white'
-                  }`}
+                className={`py-3 px-6 focus:outline-none transition-colors ${
+                  activeTab === 'pending' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-700 hover:text-white'
+                }`}
                 onClick={() => setActiveTab('pending')}
               >
                 Pending Transactions ({pendingTransactions ? pendingTransactions.length : 0})
               </button>
               <button
-                className={`py-3 px-6 focus:outline-none ${activeTab === 'completed' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-700 hover:text-white'
-                  }`}
+                className={`py-3 px-6 focus:outline-none transition-colors ${
+                  activeTab === 'completed' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-700 hover:text-white'
+                }`}
                 onClick={() => setActiveTab('completed')}
               >
                 Completed Transactions ({completedTransactions ? completedTransactions.length : 0})
               </button>
               <button
-                className={`py-3 px-6 focus:outline-none ml-auto text-red-400 hover:bg-red-900/30 hover:text-red-300`}
+                className={`py-3 px-6 focus:outline-none ml-auto text-red-400 hover:bg-red-900/30 hover:text-red-300 transition-colors`}
                 onClick={() => setShowDeleteConfirm(true)}
               >
                 Delete Team
@@ -256,7 +374,7 @@ const TeamManagement = () => {
 
             <div className="flex justify-end space-x-4">
               <button
-                className="px-4 py-2 bg-gray-700 text-white rounded-md hover:bg-gray-600"
+                className="px-4 py-2 bg-gray-700 text-white rounded-md hover:bg-gray-600 transition-colors"
                 onClick={() => {
                   setShowDeleteConfirm(false);
                   setDeleteError('');
@@ -265,7 +383,7 @@ const TeamManagement = () => {
                 Cancel
               </button>
               <button
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 onClick={handleDeleteTeam}
                 disabled={loading}
               >
