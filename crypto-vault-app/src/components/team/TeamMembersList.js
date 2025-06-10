@@ -1,8 +1,6 @@
 // src/components/team/TeamMembersList.js
 import React, { useState } from 'react';
 import { useTeam } from '../../context/TeamContext';
-// TODO: Re-enable when MPC member management is implemented
-// import AddMemberForm from './AddMemberForm';
 
 const TeamMembersList = ({ 
   members = [], 

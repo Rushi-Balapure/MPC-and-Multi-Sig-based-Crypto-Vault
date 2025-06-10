@@ -55,16 +55,6 @@ export const VaultProvider = ({ children }) => {
     }
   }, [isLoggedIn, authUser]);
 
-  //Conflict Comment - Modified by Sameer
-  // Effect to load team assets when active team changes
-//   useEffect(() => {
-//     if (teamState?.currentTeam?.teamId) {
-//       loadTeamAssets(teamState.currentTeam.teamId);
-//     }
-//   }, [teamState?.currentTeam]);
-
-  // Load user data including assets and invitations
-  
   // Effect to handle session expiry
   useEffect(() => {
     const handleVisibilityChange = async () => {
@@ -123,10 +113,6 @@ export const VaultProvider = ({ children }) => {
     setTeamAssets([]);
     setPendingInvitations([]);
     setTransactionHistory([]);
-    
-     // Load personal assets from API
-
-    setPendingTransactions([]);
     setMemberApprovals({});
     setError(null);
   };
@@ -160,68 +146,33 @@ export const VaultProvider = ({ children }) => {
       setPersonalAssets([]); // Ensure it's always an array
     }
   };
-  
-// Conflict Comment - Modified by Sameer
-//   // Load pending team invitations from API
-//   const loadPendingInvitations = async (email) => {
-//     if (!email) return;
-    
-//     try {
-//       const response = await fetch(`${API_BASE_URL}/api/invitations/${email}`, {
-//         headers: {
-//           'Authorization': `Bearer ${token}`,
-//           'Content-Type': 'application/json'
-//         }
-//       });
-
-//       if (response.ok) {
-//         const data = await response.json();
-//         setPendingInvitations(Array.isArray(data.invitations) ? data.invitations : []);
-//       } else {
-//         // Fallback to mock data if endpoint doesn't exist yet
-//         console.log('⚠️ Invitations endpoint not ready, using mock data');
-//         setPendingInvitations([
-//           { id: 'inv1', teamId: 'team3', teamName: 'New Project', invitedBy: 'user456' }
-//         ]);
-//       }
-//     } catch (err) {
-//       console.error('❌ Error loading invitations:', err);
-//       setError('Failed to load invitations');
-//       setPendingInvitations([]); // Ensure it's always an array
-//       throw err;
-//     }
-//   };
-
-  // Load teams with authentication
-  const loadUserTeams = async (userId) => {
-    try {
-      const response = await fetch(`/api/teams?userId=${userId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (!response.ok) throw new Error('Failed to fetch teams');
-      const teamsData = await response.json();
-      setTeams(teamsData);
-    } catch (err) {
-      setError('Failed to load teams');
-      throw err;
-    }
-  };
 
   // Load pending invitations with authentication
   const loadPendingInvitations = async (email) => {
+    if (!email) return;
+    
     try {
-      const response = await fetch(`/api/invitations?email=${email}`, {
+      const response = await fetch(`${API_BASE_URL}/api/invitations/${email}`, {
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
         }
       });
-      if (!response.ok) throw new Error('Failed to fetch invitations');
-      const invitations = await response.json();
-      setPendingInvitations(invitations);
+
+      if (response.ok) {
+        const data = await response.json();
+        setPendingInvitations(Array.isArray(data.invitations) ? data.invitations : []);
+      } else {
+        // Fallback to mock data if endpoint doesn't exist yet
+        console.log('⚠️ Invitations endpoint not ready, using mock data');
+        setPendingInvitations([
+          { id: 'inv1', teamId: 'team3', teamName: 'New Project', invitedBy: 'user456' }
+        ]);
+      }
     } catch (err) {
+      console.error('❌ Error loading invitations:', err);
       setError('Failed to load invitations');
+      setPendingInvitations([]); // Ensure it's always an array
       throw err;
     }
   };
@@ -333,7 +284,7 @@ export const VaultProvider = ({ children }) => {
         },
         body: JSON.stringify({
           ...transactionData,
-          teamId: activeTeam?.id,
+          teamId: teamState?.currentTeam?.teamId,
           createdBy: authUser.id
         })
       });
@@ -341,7 +292,6 @@ export const VaultProvider = ({ children }) => {
       if (!response.ok) throw new Error('Failed to create transaction');
       
       const newTransaction = await response.json();
-      setPendingTransactions(prev => [...prev, newTransaction]);
       setError(null);
       return newTransaction;
     } catch (err) {
@@ -559,6 +509,8 @@ export const VaultProvider = ({ children }) => {
       
       // Transaction history - guaranteed to be array
       transactionHistory: transactionHistory || [],
+      
+      // Team operations
       createTeam,
       selectTeam,
       addTeamMember: addTeamMemberInContext,
@@ -576,17 +528,16 @@ export const VaultProvider = ({ children }) => {
       sellAsset,
       transferAssets,
       
+      // Transaction operations
+      createTeamTransaction,
+      
       // Utility functions
       clearError,
       refreshData,
-      refreshTeams
-
-//Conflict Comment - Modified by Sameer
-//       deleteTeam,
-//       transferAssets,
-//       memberApprovals,
-//       handleMemberApproval,
-//       loadUserData, // Expose loadUserData for manual refresh
+      refreshTeams,
+      
+      // Additional state
+      memberApprovals
     }}>
       {children}
     </VaultContext.Provider>

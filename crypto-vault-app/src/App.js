@@ -52,134 +52,37 @@ const AppRoutes = () => {
 
   return (
     <Routes>
+      {/* Public route */}
       <Route
         path="/auth"
         element={isLoggedIn ? <Navigate to="/" /> : <Auth />}
       />
       
+      {/* All protected routes grouped under MainLayout */}
       <Route
-        path="/"
+        path="/*"
         element={
           <PrivateRoute>
             <MainLayout>
-              <Dashboard />
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/buy" element={<Buy />} />
+                <Route path="/sell" element={<Sell />} />
+                <Route path="/send" element={<Send />} />
+                <Route path="/receive" element={<Receive />} />
+                <Route path="/profile" element={<UserProfile />} />
+                <Route path="/team" element={<TeamManagement />} />
+                <Route path="/team/create" element={<CreateTeam />} />
+                <Route path="/transactions" element={<TransactionHistory />} />
+                <Route path="/transactions/:id" element={<TransactionDetails />} />
+                <Route path="/transactions/create" element={<CreateTransaction />} />
+                {/* Catch all route - redirect to dashboard */}
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
             </MainLayout>
           </PrivateRoute>
         }
       />
-      
-      <Route
-        path="/buy"
-        element={
-          <PrivateRoute>
-            <MainLayout>
-              <Buy />
-            </MainLayout>
-          </PrivateRoute>
-        }
-      />
-      
-      <Route
-        path="/sell"
-        element={
-          <PrivateRoute>
-            <MainLayout>
-              <Sell />
-            </MainLayout>
-          </PrivateRoute>
-        }
-      />
-      
-      <Route
-        path="/send"
-        element={
-          <PrivateRoute>
-            <MainLayout>
-              <Send />
-            </MainLayout>
-          </PrivateRoute>
-        }
-      />
-      
-      <Route
-        path="/receive"
-        element={
-          <PrivateRoute>
-            <MainLayout>
-              <Receive />
-            </MainLayout>
-          </PrivateRoute>
-        }
-      />
-      
-      <Route
-        path="/profile"
-        element={
-          <PrivateRoute>
-            <MainLayout>
-              <UserProfile />
-            </MainLayout>
-          </PrivateRoute>
-        }
-      />
-      
-      <Route
-        path="/team"
-        element={
-          <PrivateRoute>
-            <MainLayout>
-              <TeamManagement />
-            </MainLayout>
-          </PrivateRoute>
-        }
-      />
-      
-      <Route
-        path="/team/create"
-        element={
-          <PrivateRoute>
-            <MainLayout>
-              <CreateTeam />
-            </MainLayout>
-          </PrivateRoute>
-        }
-      />
-      
-      <Route
-        path="/transactions"
-        element={
-          <PrivateRoute>
-            <MainLayout>
-              <TransactionHistory />
-            </MainLayout>
-          </PrivateRoute>
-        }
-      />
-      
-      <Route
-        path="/transactions/:id"
-        element={
-          <PrivateRoute>
-            <MainLayout>
-              <TransactionDetails />
-            </MainLayout>
-          </PrivateRoute>
-        }
-      />
-      
-      <Route
-        path="/transactions/create"
-        element={
-          <PrivateRoute>
-            <MainLayout>
-              <CreateTransaction />
-            </MainLayout>
-          </PrivateRoute>
-        }
-      />
-      
-      {/* Catch all route - redirect to dashboard */}
-      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 };

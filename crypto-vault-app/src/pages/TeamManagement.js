@@ -1,9 +1,10 @@
 // src/pages/TeamManagement.js
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useTeam } from '../context/TeamContext';
-import TeamMembersList from '../components/team/TeamMembersList';
-import TransactionHistory from '../components/team/TransactionHistory';
+import { useTeam } from '../context/TeamContext'; // Adjust import path as needed
+import { useAuthContext } from '../context/AuthContext'; // Import your AuthContext
+import TeamMembersList from '../components/team/TeamMembersList'; // Import TeamMembersList
+import TransactionHistory from '../components/team/TransactionHistory'; // Import TransactionHistory
 
 const TeamManagement = () => {
   const {
@@ -26,33 +27,37 @@ const TeamManagement = () => {
     clearError
   } = useTeam();
 
+  // Use AuthContext instead of localStorage/sessionStorage
+  const { user, isLoggedIn, isLoading: authLoading } = useAuthContext();
+
   const [activeTab, setActiveTab] = useState('members');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [initialLoad, setInitialLoad] = useState(true);
   const navigate = useNavigate();
 
-  // Get user email - replace this with your actual authentication method
+  // Get user email from AuthContext
   const getCurrentUserEmail = () => {
-    // This is a placeholder - replace with your actual auth method
-    // Examples:
-    // - return localStorage.getItem('userEmail');
-    // - return authContext.user.email;
-    // - return getAuthenticatedUser().email;
-    
-    // For now, using localStorage as example
-    return localStorage.getItem('userEmail') || sessionStorage.getItem('userEmail');
+    return user?.email || user?.['email'] || null;
   };
 
   // Initialize user email and fetch teams on component mount
   useEffect(() => {
     const initializeTeamData = async () => {
+      // Wait for auth to finish loading
+      if (authLoading) return;
+
+      // Check if user is authenticated
+      if (!isLoggedIn || !user) {
+        console.error('User not authenticated');
+        setInitialLoad(false);
+        return;
+      }
+
       const currentUserEmail = getCurrentUserEmail();
       
       if (!currentUserEmail) {
-        console.error('No user email found. User might not be authenticated.');
-        // You might want to redirect to login page here
-        // navigate('/login');
+        console.error('No user email found in authenticated user data');
         setInitialLoad(false);
         return;
       }
@@ -75,7 +80,7 @@ const TeamManagement = () => {
     if (initialLoad) {
       initializeTeamData();
     }
-  }, [userEmail, setUserEmail, fetchUserTeams, initialLoad, navigate]);
+  }, [user, isLoggedIn, authLoading, userEmail, setUserEmail, fetchUserTeams, initialLoad]);
 
   // Clear any existing errors when component mounts
   useEffect(() => {
@@ -102,20 +107,6 @@ const TeamManagement = () => {
     switchTeam(teamId);
   };
 
-  const handleApproval = async (memberId, shardValue) => {
-    if (!activeTeam) {
-      console.error('No active team selected');
-      return;
-    }
-
-    try {
-      await handleMemberApproval(activeTeam.id, memberId, shardValue);
-    } catch (error) {
-      console.error('Approval failed:', error);
-      // Error will be handled by the VaultContext and displayed in the UI
-    }
-  };
-
   const navigateToCreateTeam = () => {
     navigate('/team/create');
   };
@@ -127,7 +118,6 @@ const TeamManagement = () => {
       setDeleteError('');
       await deleteTeam(currentTeam.teamId);
       setShowDeleteConfirm(false);
-      // TeamContext will automatically refresh the teams list
     } catch (err) {
       setDeleteError(err.message || 'Team deletion failed. All members must consent and team vault must be empty.');
     }
@@ -135,7 +125,6 @@ const TeamManagement = () => {
 
   const handleInitiateKey = async () => {
     try {
-      // You can replace this with a proper TeamContext method when ready
       const response = await fetch('https://2u7u5x01ek.execute-api.ap-south-1.amazonaws.com/test/', {
         method: 'GET'
       });
@@ -160,8 +149,8 @@ const TeamManagement = () => {
     }
   };
 
-  // Show loading state for initial load
-  if (initialLoad || loading) {
+  // Show loading state while auth is loading or initial load
+  if (authLoading || initialLoad || loading) {
     return (
       <div className="flex flex-col items-center justify-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-500 mb-4"></div>
@@ -170,8 +159,8 @@ const TeamManagement = () => {
     );
   }
 
-  // Show authentication error if no user email
-  if (!userEmail && !getCurrentUserEmail()) {
+  // Show authentication error if not logged in
+  if (!isLoggedIn || !user) {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="bg-red-900/50 border border-red-500 text-red-300 px-4 py-3 rounded mb-6 text-center">
@@ -183,6 +172,18 @@ const TeamManagement = () => {
           >
             Go to Login
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error if user is authenticated but no email found
+  if (!getCurrentUserEmail()) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="bg-red-900/50 border border-red-500 text-red-300 px-4 py-3 rounded mb-6 text-center">
+          <h2 className="text-xl font-bold mb-2">Email Not Found</h2>
+          <p>Unable to retrieve user email. Please try logging out and logging back in.</p>
         </div>
       </div>
     );
