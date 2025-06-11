@@ -25,7 +25,7 @@ export const VaultProvider = ({ children }) => {
     refreshTeams
   } = useTeam();
 
-  const API_BASE_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5001';
+  const API_BASE_URL = 'http://localhost:5001';
 
   // Personal assets owned by the user - initialize as empty array
   const [personalAssets, setPersonalAssets] = useState([]);
@@ -269,32 +269,39 @@ export const VaultProvider = ({ children }) => {
 
   // Create a new transaction that requires team approval
   const createTeamTransaction = async (transactionData) => {
-    if (!isLoggedIn || !authUser) {
-      setError('User not authenticated');
-      return null;
-    }
-
     setIsLoading(true);
     try {
-      const response = await fetch('/api/transactions', {
+      const response = await fetch(`${API_BASE_URL}/api/transactions`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           ...transactionData,
-          teamId: teamState?.currentTeam?.teamId,
-          createdBy: authUser.id
+          teamId: teamState?.currentTeam?.teamId || 'default-team',
+          status: 'PENDING_APPROVAL',
+          approvalsReceived: 0,
+          approvalsNeeded: 2,
+          approvals: []
         })
       });
 
-      if (!response.ok) throw new Error('Failed to create transaction');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to create transaction');
+      }
       
       const newTransaction = await response.json();
+      
+      // Update transaction list after creation
+      if (teamState?.currentTeam?.teamId) {
+        await fetchTeamTransactions(teamState.currentTeam.teamId);
+      }
+      
       setError(null);
       return newTransaction;
     } catch (err) {
+      console.error('Error creating transaction:', err);
       setError(err.message || 'Failed to create transaction');
       return null;
     } finally {

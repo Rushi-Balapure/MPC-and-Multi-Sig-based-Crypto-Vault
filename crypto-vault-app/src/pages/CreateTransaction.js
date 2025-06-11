@@ -6,7 +6,7 @@ import { useVault } from '../context/VaultContext';
 const CreateTransaction = () => {
   const { 
     activeTeam, 
-    personalAssets, 
+    teamAssets,
     createTeamTransaction, 
     isLoading, 
     error: vaultError 
@@ -17,21 +17,25 @@ const CreateTransaction = () => {
   const [formData, setFormData] = useState({
     amount: '',
     asset: 'ETH',
-    recipient: ''
+    recipient: '',
+    memo: ''
   });
   
   const [error, setError] = useState('');
-  const [availableBalance, setAvailableBalance] = useState(0);
+  const [availableBalance, setAvailableBalance] = useState(10);
   
   // Update available balance when asset selection changes
   useEffect(() => {
-    const selectedAsset = personalAssets.find(a => a.symbol === formData.asset);
-    setAvailableBalance(selectedAsset ? selectedAsset.amount : 0);
-  }, [personalAssets, formData.asset]);
+    if (teamAssets && teamAssets.length > 0) {
+      const selectedAsset = teamAssets.find(a => a.symbol === formData.asset);
+      setAvailableBalance(selectedAsset ? selectedAsset.amount : 0);
+    }
+  }, [teamAssets, formData.asset]);
   
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+    setError(''); // Clear error when user makes changes
   };
   
   const handleSubmit = async (e) => {
@@ -53,6 +57,12 @@ const CreateTransaction = () => {
       setError('No active team selected');
       return;
     }
+
+    // Check if amount exceeds available balance
+    if (parseFloat(formData.amount) > availableBalance) {
+      setError(`Amount exceeds available balance of ${availableBalance} ${formData.asset}`);
+      return;
+    }
     
     try {
       // Create team transaction
@@ -61,23 +71,28 @@ const CreateTransaction = () => {
         asset: formData.asset,
         amount: parseFloat(formData.amount),
         recipient: formData.recipient.trim(),
-        teamId: activeTeam.id
+        memo: formData.memo?.trim() || '',
+        teamId: activeTeam.id || activeTeam.teamId // Handle both id formats
       };
       
       const newTransaction = await createTeamTransaction(transactionData);
       
       if (newTransaction) {
+        // Navigate back to team page after successful creation
         navigate('/team');
       } else {
         setError('Failed to create transaction');
       }
     } catch (err) {
+      console.error('Error creating transaction:', err);
       setError(err.message || vaultError || 'Failed to create transaction');
     }
   };
 
-  // Available assets/currencies
-  const availableAssets = ['ETH', 'BTC', 'USDC', 'USDT', 'DAI'];
+  // Available assets/currencies - should come from teamAssets
+  const availableAssets = teamAssets?.length > 0 
+    ? teamAssets.map(asset => asset.symbol)
+    : ['ETH', 'BTC', 'USDC', 'USDT', 'DAI'];
 
   // Redirect if no team is selected
   if (!activeTeam) {
@@ -87,7 +102,7 @@ const CreateTransaction = () => {
         <p className="text-gray-400 mb-6">You need to create or join a team first</p>
         <button 
           className="bg-yellow-500 hover:bg-yellow-600 text-white px-6 py-2 rounded-md"
-          onClick={() => navigate('/create-team')}
+          onClick={() => navigate('/team/create')}
         >
           Create Team
         </button>
@@ -157,6 +172,19 @@ const CreateTransaction = () => {
               onChange={handleChange}
               className="w-full bg-gray-700 text-white border border-gray-600 rounded-md py-2 px-4 focus:outline-none focus:border-yellow-500"
               placeholder="0x..."
+            />
+          </div>
+
+          <div className="mb-6">
+            <label htmlFor="memo" className="block text-white mb-2">Memo (Optional)</label>
+            <textarea
+              id="memo"
+              name="memo"
+              value={formData.memo}
+              onChange={handleChange}
+              className="w-full bg-gray-700 text-white border border-gray-600 rounded-md py-2 px-4 focus:outline-none focus:border-yellow-500"
+              placeholder="Add a note about this transaction..."
+              rows="3"
             />
           </div>
           

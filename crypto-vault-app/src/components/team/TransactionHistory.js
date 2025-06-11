@@ -7,7 +7,7 @@ const TransactionHistory = ({ transactions, teamMembers, status }) => {
   const navigate = useNavigate();
   
   const createNewTransaction = () => {
-    navigate('/create-transaction');
+    navigate('/transactions/create');
   };
 
   return (

@@ -69,7 +69,7 @@ export const TeamProvider = ({ children }) => {
   const [teamState, dispatch] = useReducer(teamReducer, initialState);
   const { token, user, isLoggedIn } = useAuthContext();
 
-  const API_BASE_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5001';
+  const API_BASE_URL = 'http://localhost:5001';
 
   // Helper function to make authenticated requests
   const makeAuthenticatedRequest = useCallback(async (url, options = {}) => {
