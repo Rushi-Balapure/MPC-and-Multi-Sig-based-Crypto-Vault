@@ -217,28 +217,26 @@ export const TeamProvider = ({ children }) => {
     console.log('📋 Fetching transactions for team:', teamId);
 
     try {
-      const response = await makeAuthenticatedRequest(`${API_BASE_URL}/api/transactions/${teamId}`);
-      
-      if (response.ok) {
-        const data = await response.json();
-        const transactions = Array.isArray(data.transactions) ? data.transactions : [];
-        
-        const pending = transactions.filter(tx => tx.status === 'pending');
-        const completed = transactions.filter(tx => tx.status === 'completed');
-
-        dispatch({ 
-          type: TEAM_ACTIONS.SET_TRANSACTIONS, 
-          payload: { 
-            all: transactions, 
-            pending, 
-            completed 
-          } 
-        });
-
-        return transactions;
-      } else {
-        throw new Error('Failed to fetch transactions');
+      // Fetch pending transactions from backend
+      const pendingResponse = await makeAuthenticatedRequest(`${API_BASE_URL}/api/transactions/pending/${teamId}`);
+      let pending = [];
+      if (pendingResponse.ok) {
+        const pendingData = await pendingResponse.json();
+        pending = Array.isArray(pendingData.transactions) ? pendingData.transactions : [];
       }
+
+      // Optionally, fetch all/completed transactions from another endpoint if needed
+      // For now, just set pending and leave all/completed as empty or mock
+      dispatch({ 
+        type: TEAM_ACTIONS.SET_TRANSACTIONS, 
+        payload: { 
+          all: pending, // You can merge with completed if you fetch them
+          pending, 
+          completed: [] // Fill with completed if you fetch them
+        } 
+      });
+
+      return pending;
     } catch (error) {
       console.warn('⚠️ Transactions API not implemented yet, using mock data:', error.message);
       

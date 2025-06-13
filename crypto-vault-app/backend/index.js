@@ -12,6 +12,7 @@ import dynamoDB from './utils/awsConfig.js';
 import cors from 'cors';
 import bodyParser from 'body-parser';
 import teamRoutes from './routes/team.js';
+import transactionRoutes from './routes/transaction.js';
 import fetch from 'node-fetch';  // Add this import for making HTTP requests
 
 const port = process.env.PORT || 5000;
@@ -213,6 +214,7 @@ app.use((req, res, next) => {
 
 // Use team routes
 app.use('/api/teams', teamRoutes);
+app.use('/api/transactions', transactionRoutes);
 
 // Root test route
 app.get('/', (req, res) => {
@@ -393,84 +395,6 @@ app.post('/api/vault/approve', sessionCheckMiddleware, async (req, res) => {
         console.error('Error in vault approval:', error);
         res.status(500).json({
             message: 'Failed to process vault approval',
-            error: error.message
-        });
-    }
-});
-
-// ✅ Create Transaction Endpoint
-app.post('/api/transactions', async (req, res) => {
-    try {
-        const { type, asset, amount, recipient, memo, teamId } = req.body;
-
-        // Validate required fields
-        if (!type || !asset || !amount || !recipient || !teamId) {
-            return res.status(400).json({
-                message: 'Missing required fields. Please provide type, asset, amount, recipient, and teamId'
-            });
-        }
-
-        // Create a new transaction
-        const newTransaction = {
-            id: `tx-${Date.now()}`,
-            type,
-            asset,
-            amount: parseFloat(amount),
-            recipient,
-            memo: memo || '',
-            teamId,
-            createdBy: 'temp-user', // Temporary user ID since we removed auth
-            createdAt: new Date().toISOString(),
-            status: 'PENDING_APPROVAL',
-            approvalsReceived: 0,
-            approvalsNeeded: 2,
-            approvals: []
-        };
-
-        // Return the created transaction
-        res.status(201).json(newTransaction);
-    } catch (error) {
-        console.error('Error creating transaction:', error);
-        res.status(500).json({
-            message: 'Failed to create transaction',
-            error: error.message
-        });
-    }
-});
-
-// ✅ Get Team Transactions Endpoint
-app.get('/api/transactions/:teamId', async (req, res) => {
-    try {
-        const { teamId } = req.params;
-
-        // Mock transaction data
-        const transactions = [
-            {
-                id: `tx-${Date.now()}-1`,
-                type: 'SEND',
-                asset: 'ETH',
-                amount: 0.5,
-                recipient: '0x742d35Cc6634C0532925a3b844Bc454e4438f44e',
-                teamId,
-                createdBy: 'temp-user',
-                createdAt: new Date(Date.now() - 86400000).toISOString(),
-                status: 'PENDING_APPROVAL',
-                approvalsReceived: 1,
-                approvalsNeeded: 2,
-                approvals: [
-                    {
-                        id: 'temp-user',
-                        timestamp: new Date().toISOString()
-                    }
-                ]
-            }
-        ];
-
-        res.json({ transactions });
-    } catch (error) {
-        console.error('Error fetching transactions:', error);
-        res.status(500).json({
-            message: 'Failed to fetch transactions',
             error: error.message
         });
     }
