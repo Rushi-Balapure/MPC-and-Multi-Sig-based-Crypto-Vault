@@ -670,28 +670,24 @@ export const TeamProvider = ({ children }) => {
       throw new Error('Authentication is required');
     }
 
-    if (!approverData || !approverData.email || !approverData.teamId) {
-      throw new Error('Email and team ID are required');
+    if (!approverData || !approverData.email || !approverData.teamId || !transactionId) {
+      throw new Error('Email, team ID, and transaction ID are required');
     }
 
     dispatch({ type: TEAM_ACTIONS.SET_LOADING, payload: true });
 
     try {
-      console.log('🔄 Approving transaction with data:', approverData);
+      console.log('🔄 Approving transaction with data:', { transactionId, approverData });
 
       // Generate a random shard ID
       const shardId = Math.random().toString(36).substring(2, 15);
       console.log('🔄 Shard ID:', shardId);
+      
       // Make request to the new API endpoint with CORS headers in body
       const response = await fetch('https://2zfmmwd269.execute-api.ap-south-1.amazonaws.com', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          // 'Authorization': `Bearer ${token}`,
-          // 'Origin': 'http://localhost:3000',
-          // 'Access-Control-Allow-Origin': '*',
-          // 'Access-Control-Allow-Methods': 'POST, OPTIONS',
-          // 'Access-Control-Allow-Headers': 'Content-Type, Authorization'
         },
         body: JSON.stringify({
           "shard_id": approverData.email,
@@ -711,7 +707,66 @@ export const TeamProvider = ({ children }) => {
       }
 
       const result = await response.json();
-      console.log('✅ Transaction approved successfully:', result);
+      console.log('✅ Transaction approval response:', result);
+
+      // Update transaction status based on response
+      let newStatus = 'PENDING_APPROVAL';
+      if (result && typeof result === 'string') {
+        if (result.includes('recorded')) {
+          // Extract the shard count (e.g., "1/3" from "Shard recorded (1/3)")
+          const match = result.match(/\((\d+\/\d+)\)/);
+          const shardCount = match ? match[1] : '';
+          newStatus = `PARTIAL_COMPLETE(${shardCount})`;
+        } else if (result.toLowerCase().includes('reconstructed')) {
+          newStatus = 'COMPLETED';
+        }
+      }
+
+      // Update transaction status in database
+      if (newStatus !== 'PENDING_APPROVAL') {
+        try {
+          const updateResponse = await makeAuthenticatedRequest(
+            `${API_BASE_URL}/api/transactions/status/${transactionId}`,
+            {
+              method: 'PUT',
+              body: JSON.stringify({ status: newStatus })
+            }
+          );
+
+          if (!updateResponse.ok) {
+            const errorData = await updateResponse.json();
+            console.error('Failed to update transaction status:', errorData);
+            throw new Error(errorData.error || 'Failed to update transaction status');
+          }
+
+          const updatedTransaction = await updateResponse.json();
+          console.log('✅ Transaction status updated in database:', updatedTransaction);
+        } catch (error) {
+          console.error('❌ Error updating transaction status in database:', error);
+          throw error;
+        }
+      }
+
+      // Update local state
+      if (newStatus !== 'PENDING_APPROVAL' && teamState.currentTeam) {
+        const updatedTransactions = teamState.transactions.map(tx => {
+          if (tx.transactionId === transactionId) {
+            return { ...tx, status: newStatus };
+          }
+          return tx;
+        });
+
+        dispatch({
+          type: TEAM_ACTIONS.SET_TRANSACTIONS,
+          payload: {
+            all: updatedTransactions,
+            pending: updatedTransactions.filter(tx => 
+              tx.status === 'PENDING_APPROVAL' || tx.status.startsWith('PARTIAL_COMPLETE')
+            ),
+            completed: updatedTransactions.filter(tx => tx.status === 'COMPLETED')
+          }
+        });
+      }
 
       // Refresh transactions for the current team
       if (teamState.currentTeam) {
@@ -729,7 +784,7 @@ export const TeamProvider = ({ children }) => {
     } finally {
       dispatch({ type: TEAM_ACTIONS.SET_LOADING, payload: false });
     }
-  }, [token, fetchTeamTransactions, teamState.currentTeam]);
+  }, [token, makeAuthenticatedRequest, fetchTeamTransactions, teamState.currentTeam, teamState.transactions]);
 
   // Reset state - useful for logout
   const resetState = useCallback(() => {

@@ -63,8 +63,18 @@ const TransactionCard = ({ transaction, teamMembers, showApproveButton = false }
   };
 
   // Convert transaction status from VaultContext format to display format
-  const statusDisplay = transaction.status === 'COMPLETED' ? 'Completed' : 'Pending';
-  const isPending = transaction.status === 'PENDING_APPROVAL';
+  const getStatusDisplay = (status) => {
+    switch (status) {
+      case 'COMPLETED':
+        return 'Completed';
+      case 'PARTIAL_COMPLETE':
+        return 'Partially Complete';
+      default:
+        return 'Pending';
+    }
+  };
+  const statusDisplay = getStatusDisplay(transaction.status);
+  const isPending = transaction.status === 'PENDING_APPROVAL' || transaction.status === 'PARTIAL_COMPLETE';
 
   return (
     <div className="bg-gray-700 rounded-lg p-4 mb-4">
@@ -87,6 +97,8 @@ const TransactionCard = ({ transaction, teamMembers, showApproveButton = false }
           <span className={`inline-block px-2 py-1 rounded text-xs ${
             transaction.status === 'COMPLETED' 
               ? 'bg-green-900/40 text-green-400' 
+              : transaction.status === 'PARTIAL_COMPLETE'
+              ? 'bg-blue-900/40 text-blue-400'
               : 'bg-yellow-900/40 text-yellow-400'
           }`}>
             {statusDisplay}

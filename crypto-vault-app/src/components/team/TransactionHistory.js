@@ -39,15 +39,16 @@ const TransactionHistory = ({
       setError('');
       const approverData = {
         email: user.email || user['custom:email'],
-        teamId: transaction.teamId
+        teamId: transaction.teamId,
+        transactionId: transaction.transactionId
       };
 
       console.log('Approving transaction with data:', approverData);
-      await approveTransaction(null, approverData);
+      await approveTransaction(transaction.transactionId, approverData);
       
       // Call the parent's onApprove callback if provided
       if (typeof onApprove === 'function') {
-        onApprove(transaction.id);
+        onApprove(transaction.transactionId);
       }
     } catch (error) {
       console.error('Failed to approve transaction:', error);
@@ -86,6 +87,7 @@ const TransactionHistory = ({
   const getStatusBadgeClass = (status) => {
     switch (status) {
       case 'COMPLETED': return 'bg-green-100 text-green-800';
+      case 'PARTIAL_COMPLETE': return 'bg-blue-100 text-blue-800';
       case 'PENDING_APPROVAL': return 'bg-yellow-100 text-yellow-800';
       case 'FAILED': return 'bg-red-100 text-red-800';
       default: return 'bg-gray-100 text-gray-800';
@@ -140,9 +142,9 @@ const TransactionHistory = ({
           </div>
           <div className="flex items-center gap-4">
             <div className={`px-3 py-1 rounded ${getStatusBadgeClass(tx.status)}`}>
-              {tx.status}
+              {tx.status === 'PARTIAL_COMPLETE' ? 'Partially Complete' : tx.status}
             </div>
-            {tx.status === 'PENDING_APPROVAL' && (
+            {(tx.status === 'PENDING_APPROVAL' || tx.status === 'PARTIAL_COMPLETE') && (
               <button
                 className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
                 onClick={() => handleApprove(tx)}

@@ -93,8 +93,13 @@ const TransactionApproval = ({ transaction, teamMembers }) => {
         </div>
         <div className="w-full bg-gray-700 rounded-full h-3">
           <div
-            className={`h-3 rounded-full ${transaction.status === 'COMPLETED' ? 'bg-green-500' : 'bg-yellow-500'
-              }`}
+            className={`h-3 rounded-full ${
+              transaction.status === 'COMPLETED' 
+                ? 'bg-green-500' 
+                : transaction.status === 'PARTIAL_COMPLETE'
+                ? 'bg-blue-500'
+                : 'bg-yellow-500'
+            }`}
             style={{ width: `${approvalProgress}%` }}
           ></div>
         </div>
@@ -130,7 +135,16 @@ const TransactionApproval = ({ transaction, teamMembers }) => {
         </button>
       )}
 
-      {transaction.status === 'PENDING_APPROVAL' && hasApproved && (
+      {transaction.status === 'PARTIAL_COMPLETE' && !hasApproved && (
+        <button
+          onClick={handleApprove}
+          className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 px-4 rounded-md"
+        >
+          Submit Additional Shard
+        </button>
+      )}
+
+      {(transaction.status === 'PENDING_APPROVAL' || transaction.status === 'PARTIAL_COMPLETE') && hasApproved && (
         <div className="bg-green-900/30 border border-green-500 text-green-400 px-4 py-3 rounded text-center">
           You have approved this transaction
         </div>

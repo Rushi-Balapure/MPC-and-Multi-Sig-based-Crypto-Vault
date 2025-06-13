@@ -140,4 +140,70 @@ router.get('/pending/:teamId', async (req, res) => {
   }
 });
 
+// Update transaction status
+router.put('/status/:transactionId', async (req, res) => {
+  const { transactionId } = req.params;
+  const { status } = req.body;
+
+  if (!transactionId || !status) {
+    return res.status(400).json({
+      error: 'Transaction ID and status are required'
+    });
+  }
+
+  try {
+    // Get the transaction using the GSI
+    const queryParams = {
+      TableName: 'Transactions',
+      IndexName: 'transactionId-index',
+      KeyConditionExpression: 'transactionId = :txId',
+      ExpressionAttributeValues: {
+        ':txId': transactionId
+      }
+    };
+
+    const queryResult = await dynamoDB.query(queryParams).promise();
+    
+    if (!queryResult.Items || queryResult.Items.length === 0) {
+      return res.status(404).json({
+        error: 'Transaction not found'
+      });
+    }
+
+    const transaction = queryResult.Items[0];
+
+    // Update the transaction status using the primary key structure
+    const updateParams = {
+      TableName: 'Transactions',
+      Key: {
+        // Assuming transaction_id is the hash key
+        transaction_id: transaction.transaction_id
+      },
+      UpdateExpression: 'SET #status = :status',
+      ExpressionAttributeNames: {
+        '#status': 'status'
+      },
+      ExpressionAttributeValues: {
+        ':status': status
+      },
+      ReturnValues: 'ALL_NEW'
+    };
+
+    console.log('Update params:', updateParams); // Add logging
+
+    const result = await dynamoDB.update(updateParams).promise();
+
+    res.status(200).json({
+      message: 'Transaction status updated successfully',
+      transaction: result.Attributes
+    });
+  } catch (err) {
+    console.error('❌ Error updating transaction status:', err);
+    res.status(500).json({
+      error: 'Could not update transaction status',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+});
+
 export default router; 
