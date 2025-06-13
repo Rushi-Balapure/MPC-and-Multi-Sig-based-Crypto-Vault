@@ -1,4 +1,4 @@
-// src/context/TeamContext.js
+// src/context/TeamContext.js - Enhanced version with safety fix
 import React, { createContext, useContext, useReducer, useCallback, useEffect } from 'react';
 import { useAuthContext } from './AuthContext';
 
@@ -10,6 +10,7 @@ const TEAM_ACTIONS = {
   SET_TEAMS: 'SET_TEAMS',
   SET_CURRENT_TEAM: 'SET_CURRENT_TEAM',
   SET_TRANSACTIONS: 'SET_TRANSACTIONS',
+  SET_TRANSACTION_COUNTS: 'SET_TRANSACTION_COUNTS',
   SET_USER_EMAIL: 'SET_USER_EMAIL',
   RESET_STATE: 'RESET_STATE'
 };
@@ -21,6 +22,11 @@ const initialState = {
   transactions: [],
   pendingTransactions: [],
   completedTransactions: [],
+  transactionCounts: {
+    pending: 0,
+    completed: 0,
+    total: 0
+  },
   userEmail: null,
   loading: false,
   error: null
@@ -39,7 +45,7 @@ const teamReducer = (state, action) => {
       return { ...state, error: null };
     
     case TEAM_ACTIONS.SET_TEAMS:
-      return { ...state, teams: action.payload, loading: false };
+      return { ...state, teams: Array.isArray(action.payload) ? action.payload : [], loading: false };
     
     case TEAM_ACTIONS.SET_CURRENT_TEAM:
       return { ...state, currentTeam: action.payload };
@@ -50,6 +56,12 @@ const teamReducer = (state, action) => {
         transactions: action.payload.all || [],
         pendingTransactions: action.payload.pending || [],
         completedTransactions: action.payload.completed || []
+      };
+    
+    case TEAM_ACTIONS.SET_TRANSACTION_COUNTS:
+      return {
+        ...state,
+        transactionCounts: action.payload
       };
     
     case TEAM_ACTIONS.SET_USER_EMAIL:
@@ -210,35 +222,96 @@ export const TeamProvider = ({ children }) => {
     }
   }, [getUserEmail, token, makeAuthenticatedRequest]);
 
-  // Fetch team transactions
+  // Enhanced fetch team transactions with comprehensive data handling
   const fetchTeamTransactions = useCallback(async (teamId) => {
-    if (!teamId || !token) return [];
+    if (!teamId) {
+      console.log('No teamId provided for fetchTeamTransactions');
+      return [];
+    }
+
+    if (!token) {
+      console.log('No token available for fetchTeamTransactions');
+      return [];
+    }
     
     console.log('📋 Fetching transactions for team:', teamId);
+    dispatch({ type: TEAM_ACTIONS.SET_LOADING, payload: true });
 
     try {
-      // Fetch pending transactions from backend
-      const pendingResponse = await makeAuthenticatedRequest(`${API_BASE_URL}/api/transactions/pending/${teamId}`);
-      let pending = [];
-      if (pendingResponse.ok) {
-        const pendingData = await pendingResponse.json();
-        pending = Array.isArray(pendingData.transactions) ? pendingData.transactions : [];
+      // Try the comprehensive endpoint first (from new functionality)
+      const comprehensiveResponse = await makeAuthenticatedRequest(
+        `${API_BASE_URL}/api/transactions/team/${teamId}`
+      );
+      
+      if (comprehensiveResponse.ok) {
+        const data = await comprehensiveResponse.json();
+        console.log('✅ Comprehensive transactions data received:', data);
+        
+        // Update transactions with comprehensive data structure
+        dispatch({ 
+          type: TEAM_ACTIONS.SET_TRANSACTIONS, 
+          payload: { 
+            all: data.transactions?.all || [],
+            pending: data.transactions?.pending || [],
+            completed: data.transactions?.completed || []
+          } 
+        });
+
+        // Update transaction counts if available
+        if (data.count) {
+          dispatch({
+            type: TEAM_ACTIONS.SET_TRANSACTION_COUNTS,
+            payload: {
+              pending: data.count.pending || 0,
+              completed: data.count.completed || 0,
+              total: data.count.total || 0
+            }
+          });
+        }
+
+        console.log('Updated transaction state:', {
+          pending: data.transactions?.pending?.length || 0,
+          completed: data.transactions?.completed?.length || 0,
+          total: data.transactions?.all?.length || 0
+        });
+
+        return data.transactions?.all || [];
       }
 
-      // Optionally, fetch all/completed transactions from another endpoint if needed
-      // For now, just set pending and leave all/completed as empty or mock
-      dispatch({ 
-        type: TEAM_ACTIONS.SET_TRANSACTIONS, 
-        payload: { 
-          all: pending, // You can merge with completed if you fetch them
-          pending, 
-          completed: [] // Fill with completed if you fetch them
-        } 
-      });
+      // Fallback to pending transactions endpoint
+      const pendingResponse = await makeAuthenticatedRequest(
+        `${API_BASE_URL}/api/transactions/pending/${teamId}`
+      );
+      
+      if (pendingResponse.ok) {
+        const pendingData = await pendingResponse.json();
+        const pending = Array.isArray(pendingData.transactions) ? pendingData.transactions : [];
+        
+        dispatch({ 
+          type: TEAM_ACTIONS.SET_TRANSACTIONS, 
+          payload: { 
+            all: pending,
+            pending, 
+            completed: []
+          } 
+        });
 
-      return pending;
+        dispatch({
+          type: TEAM_ACTIONS.SET_TRANSACTION_COUNTS,
+          payload: {
+            pending: pending.length,
+            completed: 0,
+            total: pending.length
+          }
+        });
+
+        return pending;
+      }
+
+      throw new Error('No transaction endpoints available');
+
     } catch (error) {
-      console.warn('⚠️ Transactions API not implemented yet, using mock data:', error.message);
+      console.warn('⚠️ Transactions API error, using mock data:', error.message);
       
       // Mock transactions for development
       const mockTransactions = [
@@ -268,12 +341,33 @@ export const TeamProvider = ({ children }) => {
         } 
       });
 
+      dispatch({
+        type: TEAM_ACTIONS.SET_TRANSACTION_COUNTS,
+        payload: {
+          pending: pending.length,
+          completed: completed.length,
+          total: mockTransactions.length
+        }
+      });
+
       return mockTransactions;
+    } finally {
+      dispatch({ type: TEAM_ACTIONS.SET_LOADING, payload: false });
     }
   }, [token, makeAuthenticatedRequest, getUserEmail]);
 
-  // Switch team
+  // Switch team - FIXED with safety checks
   const switchTeam = useCallback(async (teamId) => {
+    // Safety check: ensure teamState.teams exists and is an array
+    if (!Array.isArray(teamState.teams)) {
+      console.error('❌ Teams array is not available for switching');
+      dispatch({ 
+        type: TEAM_ACTIONS.SET_ERROR, 
+        payload: 'Teams data not available. Please refresh the page.' 
+      });
+      return;
+    }
+
     const team = teamState.teams.find(t => t.teamId === teamId);
     if (team) {
       dispatch({ type: TEAM_ACTIONS.SET_CURRENT_TEAM, payload: team });
@@ -284,8 +378,20 @@ export const TeamProvider = ({ children }) => {
         payload: { all: [], pending: [], completed: [] } 
       });
       
+      // Reset transaction counts
+      dispatch({
+        type: TEAM_ACTIONS.SET_TRANSACTION_COUNTS,
+        payload: { pending: 0, completed: 0, total: 0 }
+      });
+      
       // Fetch transactions for the new team
       await fetchTeamTransactions(teamId);
+    } else {
+      console.error('❌ Team not found:', teamId);
+      dispatch({ 
+        type: TEAM_ACTIONS.SET_ERROR, 
+        payload: 'Selected team not found' 
+      });
     }
   }, [teamState.teams, fetchTeamTransactions]);
 
@@ -384,6 +490,54 @@ export const TeamProvider = ({ children }) => {
     }
   }, [token, makeAuthenticatedRequest, fetchUserTeams]);
 
+  // Enhanced create transaction function (NEW from provided code)
+  const createTransaction = useCallback(async (transactionData) => {
+    if (!transactionData) {
+      throw new Error('Transaction data is required');
+    }
+
+    if (!token) {
+      throw new Error('Authentication required');
+    }
+
+    dispatch({ type: TEAM_ACTIONS.SET_LOADING, payload: true });
+
+    try {
+      console.log('🔄 Creating transaction:', transactionData);
+      
+      const response = await makeAuthenticatedRequest(`${API_BASE_URL}/api/transactions/create`, {
+        method: 'POST',
+        body: JSON.stringify(transactionData)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to create transaction');
+      }
+
+      const result = await response.json();
+      console.log('✅ Transaction created successfully:', result);
+
+      // Refresh transactions for the specified team
+      if (transactionData.teamId) {
+        await fetchTeamTransactions(transactionData.teamId);
+      } else if (teamState.currentTeam) {
+        await fetchTeamTransactions(teamState.currentTeam.teamId);
+      }
+
+      return result;
+    } catch (error) {
+      console.error('❌ Error creating transaction:', error);
+      dispatch({ 
+        type: TEAM_ACTIONS.SET_ERROR, 
+        payload: error.message || 'Failed to create transaction' 
+      });
+      throw error;
+    } finally {
+      dispatch({ type: TEAM_ACTIONS.SET_LOADING, payload: false });
+    }
+  }, [token, makeAuthenticatedRequest, fetchTeamTransactions, teamState.currentTeam]);
+
   // Add team member
   const addTeamMember = useCallback(async (teamId, memberData) => {
     if (!teamId || !memberData || !token) return;
@@ -475,7 +629,7 @@ export const TeamProvider = ({ children }) => {
     }
   }, [getUserEmail, token, makeAuthenticatedRequest, fetchUserTeams, teamState.currentTeam]);
 
-  // Initiate transaction
+  // Backward compatibility - keeping original initiate transaction
   const initiateTransaction = useCallback(async (transactionData) => {
     if (!transactionData || !teamState.currentTeam || !token) return null;
     
@@ -509,25 +663,51 @@ export const TeamProvider = ({ children }) => {
     }
   }, [teamState.currentTeam, token, makeAuthenticatedRequest, fetchTeamTransactions]);
 
-  // Approve transaction
+  // Enhanced approve transaction function - supports both endpoints
   const approveTransaction = useCallback(async (transactionId, approverData) => {
-    if (!transactionId || !approverData || !token) return;
-    
+    if (!transactionId || !token) {
+      throw new Error('Transaction ID and authentication are required');
+    }
+
+    dispatch({ type: TEAM_ACTIONS.SET_LOADING, payload: true });
+
     try {
-      const response = await makeAuthenticatedRequest(`${API_BASE_URL}/api/transactions/${transactionId}/approve`, {
-        method: 'POST',
-        body: JSON.stringify(approverData)
-      });
+      console.log('🔄 Approving transaction:', transactionId, 'by:', approverData);
+      
+      // Try the new endpoint first (approve/{transactionId})
+      let response = await makeAuthenticatedRequest(
+        `${API_BASE_URL}/api/transactions/approve/${transactionId}`, 
+        {
+          method: 'POST',
+          body: JSON.stringify({ approvedBy: approverData })
+        }
+      );
+
+      // Fallback to original endpoint format if the new one doesn't work
+      if (!response.ok && response.status === 404) {
+        response = await makeAuthenticatedRequest(
+          `${API_BASE_URL}/api/transactions/${transactionId}/approve`, 
+          {
+            method: 'POST',
+            body: JSON.stringify(approverData)
+          }
+        );
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || 'Failed to approve transaction');
       }
 
-      // Refresh transactions
+      const result = await response.json();
+      console.log('✅ Transaction approved successfully:', result);
+
+      // Refresh transactions for the current team
       if (teamState.currentTeam) {
         await fetchTeamTransactions(teamState.currentTeam.teamId);
       }
+
+      return result;
     } catch (error) {
       console.error('❌ Error approving transaction:', error);
       dispatch({ 
@@ -535,6 +715,8 @@ export const TeamProvider = ({ children }) => {
         payload: error.message || 'Failed to approve transaction' 
       });
       throw error;
+    } finally {
+      dispatch({ type: TEAM_ACTIONS.SET_LOADING, payload: false });
     }
   }, [token, makeAuthenticatedRequest, fetchTeamTransactions, teamState.currentTeam]);
 
@@ -582,12 +764,13 @@ export const TeamProvider = ({ children }) => {
         fetchAllTeams, // Keep for backward compatibility
         fetchUserTeams, // New preferred method
         fetchTeamDetails,
-        fetchTeamTransactions,
+        fetchTeamTransactions, // Enhanced version
         createTeam,
+        createTransaction, // NEW - Enhanced transaction creation
         addTeamMember,
         removeTeamMember,
-        initiateTransaction,
-        approveTransaction,
+        initiateTransaction, // Keep for backward compatibility
+        approveTransaction, // Enhanced version
         switchTeam,
         deleteTeam,
         resetState,

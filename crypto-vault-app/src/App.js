@@ -15,7 +15,7 @@ import TransactionDetails from './pages/TransactionDetails';
 import { VaultProvider } from './context/VaultContext';
 import { TeamProvider } from './context/TeamContext';
 import { AuthProvider, AuthContext } from './context/AuthContext';
-import TransactionHistory from './pages/TransactionHistory';
+// import TransactionHistory from './pages/TransactionHistory';
 import CreateTransaction from './pages/CreateTransaction';
 import Auth from './pages/Auth';
 
@@ -73,7 +73,7 @@ const AppRoutes = () => {
                 <Route path="/profile" element={<UserProfile />} />
                 <Route path="/team" element={<TeamManagement />} />
                 <Route path="/team/create" element={<CreateTeam />} />
-                <Route path="/transactions" element={<TransactionHistory />} />
+                {/* <Route path="/transactions" element={<TransactionHistory />} /> */}
                 <Route path="/transactions/:id" element={<TransactionDetails />} />
                 <Route path="/transactions/create" element={<CreateTransaction />} />
                 {/* Catch all route - redirect to dashboard */}

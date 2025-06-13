@@ -1,0 +1,209 @@
+// src/pages/TransactionHistory.js
+import React, { useState, useEffect } from 'react';
+import { useTeam } from '../context/TeamContext';
+import MainLayout from '../components/layout/MainLayout';
+
+const TransactionHistory = () => {
+  const {
+    teamState: {
+      teams = [],
+      currentTeam,
+      transactions = [],
+      pendingTransactions = [],
+      completedTransactions = [],
+      loading,
+      userEmail
+    },
+    switchTeam,
+    approveTransaction
+  } = useTeam();
+
+  const [filter, setFilter] = useState('all');
+  const [assetFilter, setAssetFilter] = useState('all');
+  const [teamFilter, setTeamFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('date-desc');
+  const [uniqueAssets, setUniqueAssets] = useState([]);
+  const [localIsLoading, setLocalIsLoading] = useState(true);
+
+  // Simulate loading state initially
+  useEffect(() => {
+    setLocalIsLoading(true);
+    const timer = setTimeout(() => {
+      setLocalIsLoading(false);
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Collect unique assets for filtering
+  useEffect(() => {
+    const assets = new Set();
+
+    [...transactions, ...pendingTransactions].forEach(tx => {
+      if (tx?.asset) assets.add(tx.asset);
+    });
+
+    setUniqueAssets(Array.from(assets));
+  }, [transactions, pendingTransactions]);
+
+  // Filter and sort transactions
+  const getFilteredTransactions = () => {
+    let result = [];
+
+    if (filter === 'all' || filter === 'completed') {
+      result = [...result, ...completedTransactions];
+    }
+
+    if (filter === 'all' || filter === 'pending') {
+      result = [...result, ...pendingTransactions];
+    }
+
+    if (assetFilter !== 'all') {
+      result = result.filter(tx => tx?.asset === assetFilter);
+    }
+
+    if (teamFilter !== 'all') {
+      result = result.filter(tx => {
+        if (teamFilter === 'personal') return !tx?.teamId;
+        return tx?.teamId === teamFilter;
+      });
+    }
+
+    result.sort((a, b) => {
+      const dateA = new Date(a?.timestamp || a?.createdAt || 0);
+      const dateB = new Date(b?.timestamp || b?.createdAt || 0);
+
+      switch (sortBy) {
+        case 'date-asc': return dateA - dateB;
+        case 'date-desc': return dateB - dateA;
+        case 'amount-asc': return parseFloat(a?.amount || 0) - parseFloat(b?.amount || 0);
+        case 'amount-desc': return parseFloat(b?.amount || 0) - parseFloat(a?.amount || 0);
+        default: return 0;
+      }
+    });
+
+    return result;
+  };
+
+  const handleApproveTransaction = (txId) => {
+    if (typeof approveTransaction === 'function') {
+      approveTransaction(txId);
+    }
+  };
+
+  const handleTeamChange = async (value) => {
+    setTeamFilter(value);
+
+    if (value !== 'all' && value !== 'personal') {
+      const team = teams.find(t => t?.id === value);
+      if (team && currentTeam?.id !== value) {
+        try {
+          await switchTeam(value);
+        } catch (err) {
+          console.error("Error switching team:", err);
+        }
+      }
+    }
+  };
+
+  const getTeamName = (teamId) => {
+    if (!teamId) return 'Personal';
+    const team = teams.find(t => t?.id === teamId);
+    return team?.name || 'Team';
+  };
+
+  const getStatusBadgeClass = (status) => {
+    switch (status) {
+      case 'COMPLETED': return 'bg-green-100 text-green-800';
+      case 'PENDING_APPROVAL': return 'bg-yellow-100 text-yellow-800';
+      case 'FAILED': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getTransactionTypeIcon = (type) => {
+    switch (type) {
+      case 'SEND': return '↑';
+      case 'RECEIVE': return '↓';
+      case 'BUY': return '+';
+      case 'SELL': return '-';
+      case 'DEPOSIT': return '→';
+      case 'WITHDRAW': return '←';
+      default: return '•';
+    }
+  };
+
+  const filteredTransactions = getFilteredTransactions();
+  const hasNoData = filteredTransactions.length === 0 && !loading && !localIsLoading;
+
+  return (
+    <MainLayout>
+      <div className="p-4">
+        <h1 className="text-2xl font-semibold mb-4">Transaction History</h1>
+
+        {/* Filters */}
+        <div className="flex gap-4 flex-wrap mb-4">
+          <select value={filter} onChange={e => setFilter(e.target.value)} className="border p-2 rounded">
+            <option value="all">All</option>
+            <option value="completed">Completed</option>
+            <option value="pending">Pending</option>
+          </select>
+
+          <select value={assetFilter} onChange={e => setAssetFilter(e.target.value)} className="border p-2 rounded">
+            <option value="all">All Assets</option>
+            {uniqueAssets.map(asset => (
+              <option key={asset} value={asset}>{asset}</option>
+            ))}
+          </select>
+
+          <select value={teamFilter} onChange={e => handleTeamChange(e.target.value)} className="border p-2 rounded">
+            <option value="all">All Teams</option>
+            <option value="personal">Personal</option>
+            {teams.map(team => (
+              <option key={team.id} value={team.id}>{team.name}</option>
+            ))}
+          </select>
+
+          <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="border p-2 rounded">
+            <option value="date-desc">Newest First</option>
+            <option value="date-asc">Oldest First</option>
+            <option value="amount-desc">Amount High to Low</option>
+            <option value="amount-asc">Amount Low to High</option>
+          </select>
+        </div>
+
+        {/* Transaction List */}
+        {loading || localIsLoading ? (
+          <p>Loading transactions...</p>
+        ) : hasNoData ? (
+          <p>No transactions found.</p>
+        ) : (
+          <div className="space-y-4">
+            {filteredTransactions.map(tx => (
+              <div key={tx.id} className="p-4 border rounded shadow-sm flex justify-between items-center">
+                <div>
+                  <div className="font-medium">{getTransactionTypeIcon(tx.type)} {tx.asset}</div>
+                  <div className="text-sm text-gray-600">Amount: {tx.amount}</div>
+                  <div className="text-sm text-gray-500">{new Date(tx.timestamp || tx.createdAt).toLocaleString()}</div>
+                  <div className="text-sm text-gray-700">Team: {getTeamName(tx.teamId)}</div>
+                </div>
+                <div className={`px-3 py-1 rounded ${getStatusBadgeClass(tx.status)}`}>
+                  {tx.status}
+                </div>
+                {tx.status === 'PENDING_APPROVAL' && (
+                  <button
+                    className="ml-4 px-3 py-1 bg-blue-500 text-white rounded"
+                    onClick={() => handleApproveTransaction(tx.id)}
+                  >
+                    Approve
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </MainLayout>
+  );
+};
+
+export default TransactionHistory;

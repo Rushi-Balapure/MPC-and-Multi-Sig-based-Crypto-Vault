@@ -1,10 +1,10 @@
 // src/pages/TeamManagement.js
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useTeam } from '../context/TeamContext'; // Adjust import path as needed
-import { useAuthContext } from '../context/AuthContext'; // Import your AuthContext
-import TeamMembersList from '../components/team/TeamMembersList'; // Import TeamMembersList
-import TransactionHistory from '../components/team/TransactionHistory'; // Import TransactionHistory
+import { useTeam } from '../context/TeamContext';
+import { useAuthContext } from '../context/AuthContext';
+import TeamMembersList from '../components/team/TeamMembersList';
+import TransactionHistory from '../components/team/TransactionHistory';
 
 const TeamManagement = () => {
   const {
@@ -24,16 +24,16 @@ const TeamManagement = () => {
     deleteTeam,
     fetchTeamDetails,
     fetchTeamTransactions,
+    approveTransaction,
     clearError
   } = useTeam();
 
-  // Use AuthContext instead of localStorage/sessionStorage
   const { user, isLoggedIn, isLoading: authLoading } = useAuthContext();
-
   const [activeTab, setActiveTab] = useState('members');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [initialLoad, setInitialLoad] = useState(true);
+  const [transactionLoading, setTransactionLoading] = useState(false);
   const navigate = useNavigate();
 
   // Get user email from AuthContext
@@ -44,10 +44,8 @@ const TeamManagement = () => {
   // Initialize user email and fetch teams on component mount
   useEffect(() => {
     const initializeTeamData = async () => {
-      // Wait for auth to finish loading
       if (authLoading) return;
 
-      // Check if user is authenticated
       if (!isLoggedIn || !user) {
         console.error('User not authenticated');
         setInitialLoad(false);
@@ -62,12 +60,10 @@ const TeamManagement = () => {
         return;
       }
 
-      // Set user email in context if not already set
       if (!userEmail || userEmail !== currentUserEmail) {
         setUserEmail(currentUserEmail);
       }
 
-      // Fetch user's teams
       try {
         await fetchUserTeams(currentUserEmail);
       } catch (error) {
@@ -98,13 +94,27 @@ const TeamManagement = () => {
 
   // Fetch transactions when current team changes
   useEffect(() => {
-    if (currentTeam && currentTeam.teamId) {
-      fetchTeamTransactions(currentTeam.teamId);
-    }
+    const loadTransactions = async () => {
+      if (currentTeam && currentTeam.teamId) {
+        console.log('Loading transactions for team:', currentTeam.teamId);
+        setTransactionLoading(true);
+        try {
+          await fetchTeamTransactions(currentTeam.teamId);
+          console.log('Transactions loaded successfully');
+        } catch (error) {
+          console.error('Failed to load transactions:', error);
+        } finally {
+          setTransactionLoading(false);
+        }
+      }
+    };
+
+    loadTransactions();
   }, [currentTeam, fetchTeamTransactions]);
 
-  const handleTeamSelect = (teamId) => {
-    switchTeam(teamId);
+  const handleTeamSelect = async (teamId) => {
+    console.log('Selecting team:', teamId);
+    await switchTeam(teamId);
   };
 
   const navigateToCreateTeam = () => {
@@ -146,6 +156,37 @@ const TeamManagement = () => {
     const currentUserEmail = getCurrentUserEmail();
     if (currentUserEmail) {
       await fetchUserTeams(currentUserEmail);
+    }
+  };
+
+  const handleRefreshTransactions = async () => {
+    if (currentTeam && currentTeam.teamId) {
+      setTransactionLoading(true);
+      try {
+        await fetchTeamTransactions(currentTeam.teamId);
+      } catch (error) {
+        console.error('Failed to refresh transactions:', error);
+      } finally {
+        setTransactionLoading(false);
+      }
+    }
+  };
+
+  const handleApproveTransaction = async (transactionId) => {
+    const currentUserEmail = getCurrentUserEmail();
+    if (!currentUserEmail) {
+      alert('Unable to get user email for approval');
+      return;
+    }
+
+    try {
+      await approveTransaction(transactionId, currentUserEmail);
+      alert('Transaction approved successfully!');
+      // Refresh transactions after approval
+      await handleRefreshTransactions();
+    } catch (error) {
+      console.error('Failed to approve transaction:', error);
+      alert('Failed to approve transaction: ' + error.message);
     }
   };
 
@@ -306,6 +347,21 @@ const TeamManagement = () => {
               >
                 New Transaction
               </button>
+              <button
+                onClick={handleRefreshTransactions}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center"
+                disabled={transactionLoading}
+                title="Refresh transactions"
+              >
+                {transactionLoading ? (
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                  </svg>
+                )}
+                Refresh
+              </button>
             </div>
           </div>
 
@@ -342,6 +398,7 @@ const TeamManagement = () => {
                 Delete Team
               </button>
             </div>
+            
             <div className="p-6">
               {activeTab === 'members' && (
                 <TeamMembersList
@@ -349,27 +406,59 @@ const TeamManagement = () => {
                   members={currentTeam.members || []}
                   memberCount={currentTeam.members ? currentTeam.members.length : (currentTeam.memberCount || 0)}
                   createdBy={currentTeam.createdBy}
-                  
-                  //Conflict Comment - Modified by Sameer
-//                   onApprove={handleApproval}
-//                   approvalStatus={memberApprovals}
                 />
               )}
 
               {activeTab === 'pending' && (
-                <TransactionHistory
-                  transactions={pendingTransactions || []}
-                  teamId={currentTeam.teamId}
-                  status="pending"
-                />
+                <div>
+                  {transactionLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-yellow-500 mr-3"></div>
+                      <span className="text-gray-400">Loading transactions...</span>
+                    </div>
+                  ) : pendingTransactions && pendingTransactions.length > 0 ? (
+                    <TransactionHistory
+                      transactions={pendingTransactions}
+                      teamId={currentTeam.teamId}
+                      status="pending"
+                      onApprove={handleApproveTransaction}
+                      currentUserEmail={getCurrentUserEmail()}
+                      teams={teams}
+                    />
+                  ) : (
+                    <div className="text-center py-8">
+                      <p className="text-gray-400 mb-4">No pending transactions</p>
+                      <button
+                        className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-md"
+                        onClick={() => navigate('/transactions/create')}
+                      >
+                        Create New Transaction
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
 
               {activeTab === 'completed' && (
-                <TransactionHistory
-                  transactions={completedTransactions || []}
-                  teamId={currentTeam.teamId}
-                  status="completed"
-                />
+                <div>
+                  {transactionLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-yellow-500 mr-3"></div>
+                      <span className="text-gray-400">Loading transactions...</span>
+                    </div>
+                  ) : completedTransactions && completedTransactions.length > 0 ? (
+                    <TransactionHistory
+                      transactions={completedTransactions}
+                      teamId={currentTeam.teamId}
+                      status="completed"
+                      currentUserEmail={getCurrentUserEmail()}
+                    />
+                  ) : (
+                    <div className="text-center py-8">
+                      <p className="text-gray-400">No completed transactions</p>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -378,7 +467,7 @@ const TeamManagement = () => {
 
       {/* Delete Team Confirmation Modal */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full">
             <h3 className="text-xl font-bold text-white mb-4">Delete Team?</h3>
             <p className="text-gray-400 mb-6">
@@ -399,7 +488,6 @@ const TeamManagement = () => {
               </button>
               <button
                 className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-
                 onClick={handleDeleteTeam}
                 disabled={loading}
               >
