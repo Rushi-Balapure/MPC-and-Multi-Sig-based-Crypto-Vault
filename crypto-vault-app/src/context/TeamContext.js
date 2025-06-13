@@ -1,6 +1,7 @@
 // src/context/TeamContext.js - Enhanced version with safety fix
 import React, { createContext, useContext, useReducer, useCallback, useEffect } from 'react';
 import { useAuthContext } from './AuthContext';
+import { CognitoRefreshToken } from 'amazon-cognito-identity-js';
 
 // Action types
 const TEAM_ACTIONS = {
@@ -663,40 +664,57 @@ export const TeamProvider = ({ children }) => {
     }
   }, [teamState.currentTeam, token, makeAuthenticatedRequest, fetchTeamTransactions]);
 
-  // Enhanced approve transaction function - supports both endpoints
+  // Enhanced approve transaction function with shard support and CORS headers
   const approveTransaction = useCallback(async (transactionId, approverData) => {
-    if (!transactionId || !token) {
-      throw new Error('Transaction ID and authentication are required');
+    if (!token) {
+      throw new Error('Authentication is required');
+    }
+
+    if (!approverData || !approverData.email || !approverData.teamId) {
+      throw new Error('Email and team ID are required');
     }
 
     dispatch({ type: TEAM_ACTIONS.SET_LOADING, payload: true });
 
     try {
-      console.log('🔄 Approving transaction:', transactionId, 'by:', approverData);
+      console.log('🔄 Approving transaction with data:', approverData);
       
-      // Try the new endpoint first (approve/{transactionId})
-      let response = await makeAuthenticatedRequest(
-        `${API_BASE_URL}/api/transactions/approve/${transactionId}`, 
-        {
-          method: 'POST',
-          body: JSON.stringify({ approvedBy: approverData })
-        }
-      );
-
-      // Fallback to original endpoint format if the new one doesn't work
-      if (!response.ok && response.status === 404) {
-        response = await makeAuthenticatedRequest(
-          `${API_BASE_URL}/api/transactions/${transactionId}/approve`, 
-          {
-            method: 'POST',
-            body: JSON.stringify(approverData)
+      // Generate a random shard ID
+      const shardId = Math.random().toString(36).substring(2, 15);
+      
+      // Make request to the new API endpoint with CORS headers in body
+      const response = await fetch('https://2zfmmwd269.execute-api.ap-south-1.amazonaws.com', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          'Origin': 'http://localhost:3000',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+        },
+        body: JSON.stringify({
+          transactionId: approverData.teamId,
+          shardId: shardId,
+          shardValue: approverData.shardValue,
+          email: approverData.email,
+          headers: {
+            'Origin': 'http://localhost:3000',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization'
           }
-        );
-      }
+        })
+      });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to approve transaction');
+        console.error('Transaction approval failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorData
+        });
+        throw new Error(errorData.error || `Failed to approve transaction: ${response.statusText}`);
       }
 
       const result = await response.json();
@@ -718,7 +736,7 @@ export const TeamProvider = ({ children }) => {
     } finally {
       dispatch({ type: TEAM_ACTIONS.SET_LOADING, payload: false });
     }
-  }, [token, makeAuthenticatedRequest, fetchTeamTransactions, teamState.currentTeam]);
+  }, [token, fetchTeamTransactions, teamState.currentTeam]);
 
   // Reset state - useful for logout
   const resetState = useCallback(() => {

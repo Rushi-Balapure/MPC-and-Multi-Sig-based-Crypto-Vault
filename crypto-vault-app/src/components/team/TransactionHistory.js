@@ -1,5 +1,7 @@
 // src/components/team/TransactionHistory.js
 import React, { useState, useEffect } from 'react';
+import { useTeam } from '../../context/TeamContext';
+import { useAuthContext } from '../../context/AuthContext';
 
 const TransactionHistory = ({
   transactions = [],
@@ -9,10 +11,13 @@ const TransactionHistory = ({
   currentUserEmail = '',
   teams = []
 }) => {
+  const { user } = useAuthContext();
+  const { approveTransaction } = useTeam();
   const [filter, setFilter] = useState('all');
   const [assetFilter, setAssetFilter] = useState('all');
   const [sortBy, setSortBy] = useState('date-desc');
   const [uniqueAssets, setUniqueAssets] = useState([]);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const assets = new Set();
@@ -23,6 +28,32 @@ const TransactionHistory = ({
     }
     setUniqueAssets(Array.from(assets));
   }, [transactions]);
+
+  const handleApprove = async (transaction) => {
+    if (!user) {
+      setError('User not authenticated');
+      return;
+    }
+
+    try {
+      setError('');
+      const approverData = {
+        email: user.email || user['custom:email'],
+        teamId: transaction.teamId
+      };
+
+      console.log('Approving transaction with data:', approverData);
+      await approveTransaction(null, approverData);
+      
+      // Call the parent's onApprove callback if provided
+      if (typeof onApprove === 'function') {
+        onApprove(transaction.id);
+      }
+    } catch (error) {
+      console.error('Failed to approve transaction:', error);
+      setError(error.message || 'Failed to approve transaction');
+    }
+  };
 
   const getTeamName = (teamId) => {
     const team = Array.isArray(teams) ? teams.find(t => t?.teamId === teamId) : null;
@@ -93,29 +124,35 @@ const TransactionHistory = ({
         </select>
       </div>
 
-      <div className="space-y-4">
-        {filteredTransactions.map(tx => (
-          <div key={tx.id} className="p-4 border rounded shadow-sm flex justify-between items-center">
-            <div>
-              <div className="font-medium">{getTransactionTypeIcon(tx.type)} {tx.asset}</div>
-              <div className="text-sm text-gray-600">Amount: {tx.amount}</div>
-              <div className="text-sm text-gray-500">{new Date(tx.timestamp || tx.createdAt).toLocaleString()}</div>
-              <div className="text-sm text-gray-700">Team: {getTeamName(tx.teamId)}</div>
-            </div>
+      {error && (
+        <div className="mb-4 p-3 bg-red-100 text-red-800 rounded">
+          {error}
+        </div>
+      )}
+      
+      {filteredTransactions.map(tx => (
+        <div key={tx.id} className="p-4 border rounded shadow-sm flex justify-between items-center mb-4">
+          <div>
+            <div className="font-medium">{getTransactionTypeIcon(tx.type)} {tx.asset}</div>
+            <div className="text-sm text-gray-600">Amount: {tx.amount}</div>
+            <div className="text-sm text-gray-500">{new Date(tx.timestamp || tx.createdAt).toLocaleString()}</div>
+            <div className="text-sm text-gray-700">Team: {getTeamName(tx.teamId)}</div>
+          </div>
+          <div className="flex items-center gap-4">
             <div className={`px-3 py-1 rounded ${getStatusBadgeClass(tx.status)}`}>
               {tx.status}
             </div>
             {tx.status === 'PENDING_APPROVAL' && (
               <button
-                className="ml-4 px-3 py-1 bg-blue-500 text-white rounded"
-                onClick={() => onApprove(tx.id)}
+                className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
+                onClick={() => handleApprove(tx)}
               >
                 Approve
               </button>
             )}
           </div>
-        ))}
-      </div>
+        </div>
+      ))}
     </div>
   );
 };

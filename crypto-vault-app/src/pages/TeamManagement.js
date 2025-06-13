@@ -173,14 +173,20 @@ const TeamManagement = () => {
   };
 
   const handleApproveTransaction = async (transactionId) => {
-    const currentUserEmail = getCurrentUserEmail();
-    if (!currentUserEmail) {
-      alert('Unable to get user email for approval');
+    if (!user) {
+      alert('User not authenticated');
       return;
     }
 
     try {
-      await approveTransaction(transactionId, currentUserEmail);
+      const approverData = {
+        id: user.id || user['custom:sub'],
+        email: user.email || user['custom:email'],
+        timestamp: new Date().toISOString()
+      };
+      
+      console.log('Approving transaction with data:', { transactionId, approverData });
+      await approveTransaction(transactionId, approverData);
       alert('Transaction approved successfully!');
       // Refresh transactions after approval
       await handleRefreshTransactions();

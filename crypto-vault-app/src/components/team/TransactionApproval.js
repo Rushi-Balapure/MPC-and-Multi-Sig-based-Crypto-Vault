@@ -38,7 +38,7 @@ const TransactionApproval = ({ transaction, teamMembers }) => {
 
     try {
       setError('');
-      const response = await fetch('https://2zfmmwd269.execute-api.ap-south-1.amazonaws.com/prod', {
+      const response = await fetch('https://2zfmmwd269.execute-api.ap-south-1.amazonaws.com', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -57,7 +57,13 @@ const TransactionApproval = ({ transaction, teamMembers }) => {
       }
 
       // After successful shard submission, approve the transaction
-      await approveTransaction(transaction.id);
+      const approverData = {
+        id: user?.id,
+        email: user?.email,
+        timestamp: new Date().toISOString()
+      };
+      
+      await approveTransaction(transaction.id, approverData);
       setIsModalOpen(false);
       // Force a small delay to ensure state updates are processed
       await new Promise(resolve => setTimeout(resolve, 100));
