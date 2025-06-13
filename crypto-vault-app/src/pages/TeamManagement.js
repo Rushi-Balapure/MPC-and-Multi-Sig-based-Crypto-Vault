@@ -34,11 +34,43 @@ const TeamManagement = () => {
   const [deleteError, setDeleteError] = useState('');
   const [initialLoad, setInitialLoad] = useState(true);
   const [transactionLoading, setTransactionLoading] = useState(false);
+  const [teamBalance, setTeamBalance] = useState(null);
+  const [balanceLoading, setBalanceLoading] = useState(false);
   const navigate = useNavigate();
 
   // Get user email from AuthContext
   const getCurrentUserEmail = () => {
     return user?.email || user?.['email'] || null;
+  };
+
+  // Fetch team balance
+  const fetchTeamBalance = async (teamId) => {
+    if (!teamId) return;
+    
+    setBalanceLoading(true);
+    try {
+      // Replace with your actual API endpoint
+      const response = await fetch(`https://your-api-endpoint.com/api/teams/${teamId}/balance`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          // Add any required headers (e.g., authorization)
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setTeamBalance(data.balance || 0);
+      } else {
+        console.error('Failed to fetch team balance:', response.status);
+        setTeamBalance(0);
+      }
+    } catch (error) {
+      console.error('Error fetching team balance:', error);
+      setTeamBalance(0);
+    } finally {
+      setBalanceLoading(false);
+    }
   };
 
   // Initialize user email and fetch teams on component mount
@@ -92,24 +124,29 @@ const TeamManagement = () => {
     }
   }, [currentTeam, teams, switchTeam, loading]);
 
-  // Fetch transactions when current team changes
+  // Fetch transactions and balance when current team changes
   useEffect(() => {
-    const loadTransactions = async () => {
+    const loadTeamData = async () => {
       if (currentTeam && currentTeam.teamId) {
-        console.log('Loading transactions for team:', currentTeam.teamId);
+        console.log('Loading data for team:', currentTeam.teamId);
         setTransactionLoading(true);
+        
         try {
-          await fetchTeamTransactions(currentTeam.teamId);
-          console.log('Transactions loaded successfully');
+          // Load transactions and balance concurrently
+          await Promise.all([
+            fetchTeamTransactions(currentTeam.teamId),
+            fetchTeamBalance(currentTeam.teamId)
+          ]);
+          console.log('Team data loaded successfully');
         } catch (error) {
-          console.error('Failed to load transactions:', error);
+          console.error('Failed to load team data:', error);
         } finally {
           setTransactionLoading(false);
         }
       }
     };
 
-    loadTransactions();
+    loadTeamData();
   }, [currentTeam, fetchTeamTransactions]);
 
   const handleTeamSelect = async (teamId) => {
@@ -163,9 +200,12 @@ const TeamManagement = () => {
     if (currentTeam && currentTeam.teamId) {
       setTransactionLoading(true);
       try {
-        await fetchTeamTransactions(currentTeam.teamId);
+        await Promise.all([
+          fetchTeamTransactions(currentTeam.teamId),
+          fetchTeamBalance(currentTeam.teamId)
+        ]);
       } catch (error) {
-        console.error('Failed to refresh transactions:', error);
+        console.error('Failed to refresh team data:', error);
       } finally {
         setTransactionLoading(false);
       }
@@ -188,12 +228,21 @@ const TeamManagement = () => {
       console.log('Approving transaction with data:', { transactionId, approverData });
       await approveTransaction(transactionId, approverData);
       alert('Transaction approved successfully!');
-      // Refresh transactions after approval
+      // Refresh transactions and balance after approval
       await handleRefreshTransactions();
     } catch (error) {
       console.error('Failed to approve transaction:', error);
       alert('Failed to approve transaction: ' + error.message);
     }
+  };
+
+  // Format balance for display
+  const formatBalance = (balance) => {
+    if (balance === null || balance === undefined) return '0.00';
+    return parseFloat(balance).toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 8
+    });
   };
 
   // Show loading state while auth is loading or initial load
@@ -336,10 +385,28 @@ const TeamManagement = () => {
       {currentTeam && (
         <div className="mt-8">
           <div className="flex justify-between items-center mb-6">
-            <div>
-              <h2 className="text-xl font-bold text-white">{currentTeam.teamName || currentTeam.name} Details</h2>
-              <p className="text-gray-400">Team ID: {currentTeam.teamId}</p>
+            <div className="flex items-center gap-6">
+              <div>
+                <h2 className="text-xl font-bold text-white">{currentTeam.teamName || currentTeam.name} Details</h2>
+                <p className="text-gray-400">Team ID: {currentTeam.teamId}</p>
+              </div>
+              
+              {/* Team Balance Display - Styled like a button */}
+              <div className="bg-gray-600 text-white px-4 py-2 rounded-md flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                </svg>
+                {balanceLoading ? (
+                  <div className="flex items-center">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-400 mr-2"></div>
+                    Loading...
+                  </div>
+                ) : (
+                  `${formatBalance(teamBalance)} ETH`
+                )}
+              </div>
             </div>
+            
             <div className="flex gap-4">
               <button
                 className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md"
@@ -352,21 +419,6 @@ const TeamManagement = () => {
                 onClick={() => navigate('/transactions/create')}
               >
                 New Transaction
-              </button>
-              <button
-                onClick={handleRefreshTransactions}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center"
-                disabled={transactionLoading}
-                title="Refresh transactions"
-              >
-                {transactionLoading ? (
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
-                  </svg>
-                )}
-                Refresh
               </button>
             </div>
           </div>
