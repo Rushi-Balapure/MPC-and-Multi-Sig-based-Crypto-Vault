@@ -38,39 +38,39 @@ const teamReducer = (state, action) => {
   switch (action.type) {
     case TEAM_ACTIONS.SET_LOADING:
       return { ...state, loading: action.payload };
-    
+
     case TEAM_ACTIONS.SET_ERROR:
       return { ...state, error: action.payload, loading: false };
-    
+
     case TEAM_ACTIONS.CLEAR_ERROR:
       return { ...state, error: null };
-    
+
     case TEAM_ACTIONS.SET_TEAMS:
       return { ...state, teams: Array.isArray(action.payload) ? action.payload : [], loading: false };
-    
+
     case TEAM_ACTIONS.SET_CURRENT_TEAM:
       return { ...state, currentTeam: action.payload };
-    
+
     case TEAM_ACTIONS.SET_TRANSACTIONS:
-      return { 
-        ...state, 
+      return {
+        ...state,
         transactions: action.payload.all || [],
         pendingTransactions: action.payload.pending || [],
         completedTransactions: action.payload.completed || []
       };
-    
+
     case TEAM_ACTIONS.SET_TRANSACTION_COUNTS:
       return {
         ...state,
         transactionCounts: action.payload
       };
-    
+
     case TEAM_ACTIONS.SET_USER_EMAIL:
       return { ...state, userEmail: action.payload };
-    
+
     case TEAM_ACTIONS.RESET_STATE:
       return initialState;
-    
+
     default:
       return state;
   }
@@ -122,7 +122,7 @@ export const TeamProvider = ({ children }) => {
   // Fetch teams for a user
   const fetchUserTeams = useCallback(async (userEmail = null) => {
     const emailToUse = userEmail || getUserEmail();
-    
+
     if (!emailToUse) {
       dispatch({ type: TEAM_ACTIONS.SET_ERROR, payload: 'User email is required to fetch teams' });
       return [];
@@ -137,11 +137,11 @@ export const TeamProvider = ({ children }) => {
 
     try {
       console.log('🔄 Fetching teams for user:', emailToUse);
-      
+
       const response = await makeAuthenticatedRequest(
         `${API_BASE_URL}/api/teams/user/${encodeURIComponent(emailToUse)}`
       );
-      
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || `Failed to fetch teams: ${response.statusText}`);
@@ -149,7 +149,7 @@ export const TeamProvider = ({ children }) => {
 
       const data = await response.json();
       const fetchedTeams = Array.isArray(data.teams) ? data.teams : [];
-      
+
       console.log('✅ Teams fetched successfully:', fetchedTeams);
 
       dispatch({ type: TEAM_ACTIONS.SET_TEAMS, payload: fetchedTeams });
@@ -165,9 +165,9 @@ export const TeamProvider = ({ children }) => {
       return fetchedTeams;
     } catch (error) {
       console.error('❌ Error fetching teams:', error);
-      dispatch({ 
-        type: TEAM_ACTIONS.SET_ERROR, 
-        payload: error.message || 'Failed to fetch teams' 
+      dispatch({
+        type: TEAM_ACTIONS.SET_ERROR,
+        payload: error.message || 'Failed to fetch teams'
       });
       return [];
     }
@@ -181,7 +181,7 @@ export const TeamProvider = ({ children }) => {
   // Fetch specific team details
   const fetchTeamDetails = useCallback(async (teamId) => {
     const userEmail = getUserEmail();
-    
+
     if (!teamId) {
       dispatch({ type: TEAM_ACTIONS.SET_ERROR, payload: 'Team ID is required' });
       return null;
@@ -195,12 +195,12 @@ export const TeamProvider = ({ children }) => {
     dispatch({ type: TEAM_ACTIONS.SET_LOADING, payload: true });
 
     try {
-      const url = userEmail 
+      const url = userEmail
         ? `${API_BASE_URL}/api/teams/details/${teamId}?userEmail=${encodeURIComponent(userEmail)}`
         : `${API_BASE_URL}/api/teams/details/${teamId}`;
-        
+
       const response = await makeAuthenticatedRequest(url);
-      
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || `Failed to fetch team details: ${response.statusText}`);
@@ -215,9 +215,9 @@ export const TeamProvider = ({ children }) => {
       return data.team;
     } catch (error) {
       console.error('❌ Error fetching team details:', error);
-      dispatch({ 
-        type: TEAM_ACTIONS.SET_ERROR, 
-        payload: error.message || 'Failed to fetch team details' 
+      dispatch({
+        type: TEAM_ACTIONS.SET_ERROR,
+        payload: error.message || 'Failed to fetch team details'
       });
       return null;
     }
@@ -234,7 +234,7 @@ export const TeamProvider = ({ children }) => {
       console.log('No token available for fetchTeamTransactions');
       return [];
     }
-    
+
     console.log('📋 Fetching transactions for team:', teamId);
     dispatch({ type: TEAM_ACTIONS.SET_LOADING, payload: true });
 
@@ -243,19 +243,19 @@ export const TeamProvider = ({ children }) => {
       const comprehensiveResponse = await makeAuthenticatedRequest(
         `${API_BASE_URL}/api/transactions/team/${teamId}`
       );
-      
+
       if (comprehensiveResponse.ok) {
         const data = await comprehensiveResponse.json();
         console.log('✅ Comprehensive transactions data received:', data);
-        
+
         // Update transactions with comprehensive data structure
-        dispatch({ 
-          type: TEAM_ACTIONS.SET_TRANSACTIONS, 
-          payload: { 
+        dispatch({
+          type: TEAM_ACTIONS.SET_TRANSACTIONS,
+          payload: {
             all: data.transactions?.all || [],
             pending: data.transactions?.pending || [],
             completed: data.transactions?.completed || []
-          } 
+          }
         });
 
         // Update transaction counts if available
@@ -283,18 +283,18 @@ export const TeamProvider = ({ children }) => {
       const pendingResponse = await makeAuthenticatedRequest(
         `${API_BASE_URL}/api/transactions/pending/${teamId}`
       );
-      
+
       if (pendingResponse.ok) {
         const pendingData = await pendingResponse.json();
         const pending = Array.isArray(pendingData.transactions) ? pendingData.transactions : [];
-        
-        dispatch({ 
-          type: TEAM_ACTIONS.SET_TRANSACTIONS, 
-          payload: { 
+
+        dispatch({
+          type: TEAM_ACTIONS.SET_TRANSACTIONS,
+          payload: {
             all: pending,
-            pending, 
+            pending,
             completed: []
-          } 
+          }
         });
 
         dispatch({
@@ -313,7 +313,7 @@ export const TeamProvider = ({ children }) => {
 
     } catch (error) {
       console.warn('⚠️ Transactions API error, using mock data:', error.message);
-      
+
       // Mock transactions for development
       const mockTransactions = [
         {
@@ -333,13 +333,13 @@ export const TeamProvider = ({ children }) => {
       const pending = mockTransactions.filter(tx => tx.status === 'pending');
       const completed = mockTransactions.filter(tx => tx.status === 'completed');
 
-      dispatch({ 
-        type: TEAM_ACTIONS.SET_TRANSACTIONS, 
-        payload: { 
-          all: mockTransactions, 
-          pending, 
-          completed 
-        } 
+      dispatch({
+        type: TEAM_ACTIONS.SET_TRANSACTIONS,
+        payload: {
+          all: mockTransactions,
+          pending,
+          completed
+        }
       });
 
       dispatch({
@@ -362,9 +362,9 @@ export const TeamProvider = ({ children }) => {
     // Safety check: ensure teamState.teams exists and is an array
     if (!Array.isArray(teamState.teams)) {
       console.error('❌ Teams array is not available for switching');
-      dispatch({ 
-        type: TEAM_ACTIONS.SET_ERROR, 
-        payload: 'Teams data not available. Please refresh the page.' 
+      dispatch({
+        type: TEAM_ACTIONS.SET_ERROR,
+        payload: 'Teams data not available. Please refresh the page.'
       });
       return;
     }
@@ -372,26 +372,26 @@ export const TeamProvider = ({ children }) => {
     const team = teamState.teams.find(t => t.teamId === teamId);
     if (team) {
       dispatch({ type: TEAM_ACTIONS.SET_CURRENT_TEAM, payload: team });
-      
+
       // Clear existing transactions when switching teams
-      dispatch({ 
-        type: TEAM_ACTIONS.SET_TRANSACTIONS, 
-        payload: { all: [], pending: [], completed: [] } 
+      dispatch({
+        type: TEAM_ACTIONS.SET_TRANSACTIONS,
+        payload: { all: [], pending: [], completed: [] }
       });
-      
+
       // Reset transaction counts
       dispatch({
         type: TEAM_ACTIONS.SET_TRANSACTION_COUNTS,
         payload: { pending: 0, completed: 0, total: 0 }
       });
-      
+
       // Fetch transactions for the new team
       await fetchTeamTransactions(teamId);
     } else {
       console.error('❌ Team not found:', teamId);
-      dispatch({ 
-        type: TEAM_ACTIONS.SET_ERROR, 
-        payload: 'Selected team not found' 
+      dispatch({
+        type: TEAM_ACTIONS.SET_ERROR,
+        payload: 'Selected team not found'
       });
     }
   }, [teamState.teams, fetchTeamTransactions]);
@@ -473,19 +473,19 @@ export const TeamProvider = ({ children }) => {
       }
 
       console.log('✅ TeamContext: Team created successfully:', responseData);
-      
+
       // Refresh teams list to get the latest data
       await fetchUserTeams();
-      
+
       dispatch({ type: TEAM_ACTIONS.SET_LOADING, payload: false });
 
       return responseData;
-      
+
     } catch (error) {
       console.error('❌ TeamContext: Error creating team:', error);
-      dispatch({ 
-        type: TEAM_ACTIONS.SET_ERROR, 
-        payload: error.message || 'Failed to create team' 
+      dispatch({
+        type: TEAM_ACTIONS.SET_ERROR,
+        payload: error.message || 'Failed to create team'
       });
       throw error;
     }
@@ -505,7 +505,7 @@ export const TeamProvider = ({ children }) => {
 
     try {
       console.log('🔄 Creating transaction:', transactionData);
-      
+
       const response = await makeAuthenticatedRequest(`${API_BASE_URL}/api/transactions/create`, {
         method: 'POST',
         body: JSON.stringify(transactionData)
@@ -529,9 +529,9 @@ export const TeamProvider = ({ children }) => {
       return result;
     } catch (error) {
       console.error('❌ Error creating transaction:', error);
-      dispatch({ 
-        type: TEAM_ACTIONS.SET_ERROR, 
-        payload: error.message || 'Failed to create transaction' 
+      dispatch({
+        type: TEAM_ACTIONS.SET_ERROR,
+        payload: error.message || 'Failed to create transaction'
       });
       throw error;
     } finally {
@@ -542,7 +542,7 @@ export const TeamProvider = ({ children }) => {
   // Add team member
   const addTeamMember = useCallback(async (teamId, memberData) => {
     if (!teamId || !memberData || !token) return;
-    
+
     try {
       const response = await makeAuthenticatedRequest(`${API_BASE_URL}/api/teams/${teamId}/members`, {
         method: 'POST',
@@ -558,9 +558,9 @@ export const TeamProvider = ({ children }) => {
       await fetchUserTeams();
     } catch (error) {
       console.error('❌ Error adding team member:', error);
-      dispatch({ 
-        type: TEAM_ACTIONS.SET_ERROR, 
-        payload: error.message || 'Failed to add team member' 
+      dispatch({
+        type: TEAM_ACTIONS.SET_ERROR,
+        payload: error.message || 'Failed to add team member'
       });
       throw error;
     }
@@ -569,7 +569,7 @@ export const TeamProvider = ({ children }) => {
   // Remove team member
   const removeTeamMember = useCallback(async (teamId, memberId) => {
     if (!teamId || !memberId || !token) return;
-    
+
     try {
       const response = await makeAuthenticatedRequest(`${API_BASE_URL}/api/teams/${teamId}/members/${memberId}`, {
         method: 'DELETE'
@@ -584,9 +584,9 @@ export const TeamProvider = ({ children }) => {
       await fetchUserTeams();
     } catch (error) {
       console.error('❌ Error removing team member:', error);
-      dispatch({ 
-        type: TEAM_ACTIONS.SET_ERROR, 
-        payload: error.message || 'Failed to remove team member' 
+      dispatch({
+        type: TEAM_ACTIONS.SET_ERROR,
+        payload: error.message || 'Failed to remove team member'
       });
       throw error;
     }
@@ -595,7 +595,7 @@ export const TeamProvider = ({ children }) => {
   // Delete team
   const deleteTeam = useCallback(async (teamId) => {
     const userEmail = getUserEmail();
-    
+
     if (!teamId || !userEmail || !token) {
       throw new Error('Team ID, user email, and authentication are required');
     }
@@ -633,7 +633,7 @@ export const TeamProvider = ({ children }) => {
   // Backward compatibility - keeping original initiate transaction
   const initiateTransaction = useCallback(async (transactionData) => {
     if (!transactionData || !teamState.currentTeam || !token) return null;
-    
+
     try {
       const response = await makeAuthenticatedRequest(`${API_BASE_URL}/api/transactions/initiate`, {
         method: 'POST',
@@ -649,16 +649,16 @@ export const TeamProvider = ({ children }) => {
       }
 
       const result = await response.json();
-      
+
       // Refresh transactions
       await fetchTeamTransactions(teamState.currentTeam.teamId);
-      
+
       return result;
     } catch (error) {
       console.error('❌ Error initiating transaction:', error);
-      dispatch({ 
-        type: TEAM_ACTIONS.SET_ERROR, 
-        payload: error.message || 'Failed to initiate transaction' 
+      dispatch({
+        type: TEAM_ACTIONS.SET_ERROR,
+        payload: error.message || 'Failed to initiate transaction'
       });
       throw error;
     }
@@ -678,32 +678,25 @@ export const TeamProvider = ({ children }) => {
 
     try {
       console.log('🔄 Approving transaction with data:', approverData);
-      
+
       // Generate a random shard ID
       const shardId = Math.random().toString(36).substring(2, 15);
-      
+      console.log('🔄 Shard ID:', shardId);
       // Make request to the new API endpoint with CORS headers in body
       const response = await fetch('https://2zfmmwd269.execute-api.ap-south-1.amazonaws.com', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-          'Origin': 'http://localhost:3000',
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+          // 'Authorization': `Bearer ${token}`,
+          // 'Origin': 'http://localhost:3000',
+          // 'Access-Control-Allow-Origin': '*',
+          // 'Access-Control-Allow-Methods': 'POST, OPTIONS',
+          // 'Access-Control-Allow-Headers': 'Content-Type, Authorization'
         },
         body: JSON.stringify({
-          transactionId: approverData.teamId,
-          shardId: shardId,
-          shardValue: approverData.shardValue,
-          email: approverData.email,
-          headers: {
-            'Origin': 'http://localhost:3000',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-          }
+          "shard_id": approverData.email,
+          "shard_value": shardId,
+          "team_id": approverData.teamId
         })
       });
 
@@ -728,9 +721,9 @@ export const TeamProvider = ({ children }) => {
       return result;
     } catch (error) {
       console.error('❌ Error approving transaction:', error);
-      dispatch({ 
-        type: TEAM_ACTIONS.SET_ERROR, 
-        payload: error.message || 'Failed to approve transaction' 
+      dispatch({
+        type: TEAM_ACTIONS.SET_ERROR,
+        payload: error.message || 'Failed to approve transaction'
       });
       throw error;
     } finally {

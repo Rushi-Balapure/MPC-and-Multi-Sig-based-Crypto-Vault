@@ -232,7 +232,6 @@ const TeamManagement = () => {
       await handleRefreshTransactions();
     } catch (error) {
       console.error('Failed to approve transaction:', error);
-      alert('Failed to approve transaction: ' + error.message);
     }
   };
 

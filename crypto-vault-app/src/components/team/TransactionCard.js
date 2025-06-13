@@ -47,25 +47,6 @@ const TransactionCard = ({ transaction, teamMembers, showApproveButton = false }
     }
 
     try {
-      setError('');
-      const response = await fetch('https://2zfmmwd269.execute-api.ap-south-1.amazonaws.com/prod', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          team_id: transaction.teamId,
-          shard_id: user.id,
-          shard_value: shardValue
-        })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to submit shard');
-      }
-
       // After successful shard submission, approve the transaction
       await approveTransaction(transaction.id);
       setIsModalOpen(false);

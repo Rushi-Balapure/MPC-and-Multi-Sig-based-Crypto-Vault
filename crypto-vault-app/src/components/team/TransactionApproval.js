@@ -7,18 +7,18 @@ const TransactionApproval = ({ transaction, teamMembers }) => {
   const { approveTransaction, user } = useVault();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [error, setError] = useState('');
-  
+
   if (!transaction) return null;
-  
+
   // Calculate approval progress based on transaction data
   const approvalProgress = (transaction.approvalsReceived / transaction.approvalsNeeded) * 100;
-  
+
   // Check if current user has already approved
   // Note: The structure may need to be adjusted based on how you store approvals in your actual implementation
-  const hasApproved = transaction.approvals ? 
-    transaction.approvals.some(approver => approver.id === (user?.id || '')) : 
+  const hasApproved = transaction.approvals ?
+    transaction.approvals.some(approver => approver.id === (user?.id || '')) :
     false;
-  
+
   const handleApprove = async () => {
     if (!user?.id) {
       setError('User not authenticated');
@@ -41,7 +41,7 @@ const TransactionApproval = ({ transaction, teamMembers }) => {
       const response = await fetch('https://2zfmmwd269.execute-api.ap-south-1.amazonaws.com', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           team_id: transaction.teamId,
@@ -62,7 +62,7 @@ const TransactionApproval = ({ transaction, teamMembers }) => {
         email: user?.email,
         timestamp: new Date().toISOString()
       };
-      
+
       await approveTransaction(transaction.id, approverData);
       setIsModalOpen(false);
       // Force a small delay to ensure state updates are processed
@@ -72,7 +72,7 @@ const TransactionApproval = ({ transaction, teamMembers }) => {
       setError(error.message || 'Failed to submit shard. Please try again.');
     }
   };
-  
+
   const getApproverName = (approverId) => {
     const member = teamMembers.find(m => m.id === approverId);
     return member ? member.name : 'Unknown Member';
@@ -81,7 +81,7 @@ const TransactionApproval = ({ transaction, teamMembers }) => {
   return (
     <div className="bg-gray-800 rounded-lg p-6">
       <h3 className="text-xl font-bold text-white mb-4">Approval Status</h3>
-      
+
       <div className="mb-6">
         <div className="flex justify-between text-sm mb-2">
           <span className="text-gray-300">
@@ -92,15 +92,14 @@ const TransactionApproval = ({ transaction, teamMembers }) => {
           </span>
         </div>
         <div className="w-full bg-gray-700 rounded-full h-3">
-          <div 
-            className={`h-3 rounded-full ${
-              transaction.status === 'COMPLETED' ? 'bg-green-500' : 'bg-yellow-500'
-            }`}
+          <div
+            className={`h-3 rounded-full ${transaction.status === 'COMPLETED' ? 'bg-green-500' : 'bg-yellow-500'
+              }`}
             style={{ width: `${approvalProgress}%` }}
           ></div>
         </div>
       </div>
-      
+
       <div className="mb-6">
         <h4 className="text-white font-medium mb-3">Approvers</h4>
         {transaction.approvals && transaction.approvals.length > 0 ? (
@@ -121,7 +120,7 @@ const TransactionApproval = ({ transaction, teamMembers }) => {
           <p className="text-gray-400">No approvals yet</p>
         )}
       </div>
-      
+
       {transaction.status === 'PENDING_APPROVAL' && !hasApproved && (
         <button
           onClick={handleApprove}
@@ -130,13 +129,13 @@ const TransactionApproval = ({ transaction, teamMembers }) => {
           Approve Transaction
         </button>
       )}
-      
+
       {transaction.status === 'PENDING_APPROVAL' && hasApproved && (
         <div className="bg-green-900/30 border border-green-500 text-green-400 px-4 py-3 rounded text-center">
           You have approved this transaction
         </div>
       )}
-      
+
       {transaction.status === 'COMPLETED' && (
         <div className="bg-green-900/30 border border-green-500 text-green-400 px-4 py-3 rounded text-center">
           Transaction completed
