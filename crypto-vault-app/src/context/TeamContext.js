@@ -713,8 +713,8 @@ export const TeamProvider = ({ children }) => {
       let newStatus = 'PENDING_APPROVAL';
       if (result && typeof result === 'string') {
         if (result.includes('recorded')) {
-          // Extract the shard count (e.g., "1/3" from "Shard recorded (1/3)")
-          const match = result.match(/\((\d+\/\d+)\)/);
+          // Extract the shard count (e.g., "1/3" from "Shard recorded (now 1/3)")
+          const match = result.match(/recorded\s*\(now\s*(\d+\/\d+)\)/);
           const shardCount = match ? match[1] : '';
           newStatus = `PARTIAL_COMPLETE(${shardCount})`;
         } else if (result.toLowerCase().includes('reconstructed')) {
